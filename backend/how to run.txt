@@ -1,0 +1,8 @@
+# 1. Start WAMPServer (ensuring Apache on Port 80 and MySQL on Port 3306 are running)
+# 2. Start NGROK tunnel pointing to WAMP Apache port (port 80):
+ngrok http 80
+
+# (Optional: If using the Flask API on port 5000):
+# venv\Scripts\activate
+# python app.py
+# ngrok http 5000
