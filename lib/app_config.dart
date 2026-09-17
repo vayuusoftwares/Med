@@ -9,7 +9,7 @@ class AppConfig {
   static const String ngrokUrl = 'https://overjoyed-strode-bountiful.ngrok-free.dev';
 
   // ── 2. Your PC / Server local IP ──────────────────────────────────────────
-  static const String localIp = 'http://192.168.0.102'; // Local LAN IP for Wi-Fi devices
+  static const String localIp = 'http://192.168.0.100'; // Local LAN IP for Wi-Fi devices
 
   // ── 3. Toggle: true = use NGROK tunnel ────────────────────────────────────
   static const bool useNgrok = true;
@@ -52,7 +52,8 @@ class AppConfig {
     if (useNgrok && ngrokUrl.isNotEmpty) {
       list.add(ngrokUrl);
     }
-    // 2. Direct LAN IP (Wi-Fi connected devices)
+    // 2. Direct LAN IPs (Wi-Fi connected devices)
+    list.add('http://192.168.0.100');
     list.add('http://192.168.0.102');
     // 3. Android Emulator fallback
     list.add('http://10.0.2.2');

@@ -623,8 +623,25 @@ class _TaskScreenState extends State<TaskScreen>
                     if (mounted) _snack(data['message'] ?? 'Failed to add doctor.');
                   }
                 } catch (_) {
-                  setS(() => saving = false);
-                  if (mounted) _snack('Could not connect to server.');
+                  final enteredArea = areaCtrl.text.trim();
+                  final d = _Doctor(
+                    nameCtrl.text.trim(),
+                    specCtrl.text.trim(),
+                    phoneCtrl.text.trim(),
+                    DateTime.now().millisecondsSinceEpoch,
+                    widget.salesRep.id,
+                    enteredArea,
+                  );
+                  if (mounted) {
+                    setState(() {
+                      _doctors.add(d);
+                      if (enteredArea.isNotEmpty && !_areas.contains(enteredArea)) {
+                        _areas.add(enteredArea);
+                      }
+                    });
+                  }
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) _snack('Doctor "${d.name}" added locally (offline mode).');
                 }
               },
               child: saving
@@ -644,14 +661,14 @@ class _TaskScreenState extends State<TaskScreen>
     final nameCtrl    = TextEditingController();
     final addrCtrl    = TextEditingController();
     final phoneCtrl   = TextEditingController();
-    final areaCtrl    = TextEditingController(text: _selectedArea != 'All Areas' ? _selectedArea : '');
+    final areaCtrl    = TextEditingController();
     final mapUrlCtrl  = TextEditingController();
     final latCtrl     = TextEditingController();
     final lngCtrl     = TextEditingController();
     final formKey     = GlobalKey<FormState>();
-    bool saving       = false;
-    bool urlParsed    = false;
-    bool isExtracting = false;
+    bool  saving      = false;
+    bool  urlParsed   = false;
+    bool  isExtracting= false;
 
     await showDialog(
       context: context,
@@ -659,24 +676,26 @@ class _TaskScreenState extends State<TaskScreen>
         builder: (ctx, setS) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Row(children: [
-            Icon(Icons.add_business_rounded, color: Color(0xFF00A86B)),
+            Icon(Icons.local_hospital_rounded, color: Color(0xFF00A86B)),
             SizedBox(width: 10),
-            Text('Add New Clinic', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            Text('Add New Clinic',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           ]),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                _dialogField(nameCtrl, 'Clinic / Hospital Name *', Icons.local_hospital_rounded,
-                    validator: (v) => (v == null || v.isEmpty) ? 'Required' : null),
-                const SizedBox(height: 10),
-                _dialogField(areaCtrl, 'Area / Division (e.g. Chennai)', Icons.location_city_rounded),
-                const SizedBox(height: 10),
-                _dialogField(addrCtrl, 'Address', Icons.home_rounded),
-                const SizedBox(height: 10),
-                _dialogField(phoneCtrl, 'Phone Number', Icons.phone_rounded, type: TextInputType.phone),
+                _dialogField(nameCtrl, 'Clinic / Hospital Name *',
+                    Icons.local_hospital_rounded,
+                    validator: (v) => v == null || v.trim().isEmpty ? 'Name is required' : null),
                 const SizedBox(height: 12),
-                // ── Map URL ──
+                _dialogField(addrCtrl, 'Address', Icons.place_rounded),
+                const SizedBox(height: 12),
+                _dialogField(phoneCtrl, 'Phone Number', Icons.phone_rounded,
+                    type: TextInputType.phone),
+                const SizedBox(height: 12),
+                _dialogField(areaCtrl, 'Area / Division (e.g. Chennai)', Icons.location_city_rounded),
+                const SizedBox(height: 12),
                 TextFormField(
                   controller: mapUrlCtrl,
                   onChanged: (val) {
@@ -813,8 +832,8 @@ class _TaskScreenState extends State<TaskScreen>
                   return;
                 }
                 setS(() => saving = true);
+                final enteredArea = areaCtrl.text.trim();
                 try {
-                  final enteredArea = areaCtrl.text.trim();
                   final res = await _postRequest(
                     '/backend/add_clinic.php',
                     jsonEncode({
@@ -857,8 +876,26 @@ class _TaskScreenState extends State<TaskScreen>
                     if (mounted) _snack(data['message'] ?? 'Failed to add clinic.');
                   }
                 } catch (_) {
-                  setS(() => saving = false);
-                  if (mounted) _snack('Could not connect to server.');
+                  final c = _Clinic(
+                    nameCtrl.text.trim(),
+                    lat,
+                    lng,
+                    addrCtrl.text.trim(),
+                    phoneCtrl.text.trim(),
+                    DateTime.now().millisecondsSinceEpoch,
+                    widget.salesRep.id,
+                    enteredArea,
+                  );
+                  if (mounted) {
+                    setState(() {
+                      _clinics.add(c);
+                      if (enteredArea.isNotEmpty && !_areas.contains(enteredArea)) {
+                        _areas.add(enteredArea);
+                      }
+                    });
+                  }
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) _snack('Clinic "${c.name}" added locally (offline mode).');
                 }
               },
               child: saving
@@ -949,8 +986,16 @@ class _TaskScreenState extends State<TaskScreen>
                           if (mounted) _snack(data['message'] ?? 'Failed to add area.');
                         }
                       } catch (_) {
-                        setS(() => saving = false);
-                        if (mounted) _snack('Could not connect to server.');
+                        if (mounted) {
+                          setState(() {
+                            if (!_areas.any((a) => a.toLowerCase() == enteredArea.toLowerCase())) {
+                              _areas.add(enteredArea);
+                            }
+                            _selectedArea = enteredArea;
+                          });
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (mounted) _snack('Area "$enteredArea" added locally (offline mode).');
                       }
                     },
               child: saving
