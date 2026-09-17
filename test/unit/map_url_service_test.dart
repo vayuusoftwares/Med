@@ -166,6 +166,71 @@ void main() {
       expect(res['lng'], equals(79.852100));
     });
 
+    test('extracts coordinates from Degrees Minutes Seconds (DMS) format', () {
+      final res1 = MapUrlService.extractCoordinatesFromText('13°04\'57.7"N 80°16\'14.5"E');
+      expect(res1, isNotNull);
+      expect(res1!['lat'], closeTo(13.082694, 0.0001));
+      expect(res1['lng'], closeTo(80.270694, 0.0001));
+
+      final res2 = MapUrlService.extractCoordinatesFromText('13°04.962\'N, 80°16.242\'E');
+      expect(res2, isNotNull);
+      expect(res2!['lat'], closeTo(13.0827, 0.0001));
+      expect(res2['lng'], closeTo(80.2707, 0.0001));
+
+      final res3 = MapUrlService.extractCoordinatesFromText('33°52\'07.7"S 151°12\'33.5"W');
+      expect(res3, isNotNull);
+      expect(res3!['lat'], closeTo(-33.8688, 0.0001));
+      expect(res3['lng'], closeTo(-151.2093, 0.0001));
+    });
+
+    test('extracts marker coordinates from staticmap URL with multiple style tags in markers param', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://maps.googleapis.com/maps/api/staticmap?center=13.0855,80.2760&zoom=14&size=400x400&markers=color:red%7Csize:mid%7Cscale:2%7C11.0165%2C79.8521',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.0165));
+      expect(res['lng'], equals(79.8521));
+    });
+
+    test('extracts route destination coordinates with !1d and !2d', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://www.google.com/maps/dir/Current+Location/Apollo/@13.0855,80.2760,17z/data=!4m2!4m1!3e0!1m5!1m1!1s0x0:0x0!2m2!1d79.8521!2d11.0165',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.0165));
+      expect(res['lng'], equals(79.8521));
+    });
+
+    test('extracts coordinates directly from /maps/place/<lat>,<lng> URL path', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://www.google.com/maps/place/11.0165,79.8521/@13.0855,80.2760,17z',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.0165));
+      expect(res['lng'], equals(79.8521));
+    });
+
+    test('extracts coordinates from JSON-LD structure in HTML', () {
+      final html = '''
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "MedicalClinic",
+          "name": "Apollo Clinic",
+          "geo": {
+            "@type": "GeoCoordinates",
+            "latitude": 11.0165,
+            "longitude": 79.8521
+          }
+        }
+        </script>
+      ''';
+      final res = MapUrlService.extractCoordinatesFromText(html);
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.0165));
+      expect(res['lng'], equals(79.8521));
+    });
+
     test('returns null for empty or invalid text', () {
       expect(MapUrlService.extractCoordinatesFromText(''), isNull);
       expect(MapUrlService.extractCoordinatesFromText('hello world'), isNull);
