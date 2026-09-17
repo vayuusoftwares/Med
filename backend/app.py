@@ -242,21 +242,21 @@ def get_data():
         with conn.cursor() as cursor:
             if role == 'sales_rep' and user_id:
                 cursor.execute(
-                    "SELECT id, name, speciality, phone, added_by FROM doctors WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (added_by = 0 OR added_by IS NULL OR added_by = %s) ORDER BY name ASC",
+                    "SELECT id, name, speciality, phone, area, added_by FROM doctors WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (added_by = 0 OR added_by IS NULL OR added_by = %s) ORDER BY name ASC",
                     (user_id,)
                 )
                 doctors = cursor.fetchall()
 
                 cursor.execute(
-                    "SELECT id, name, lat, lng, address, phone, map_url, added_by FROM clinics WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (added_by = 0 OR added_by IS NULL OR added_by = %s) ORDER BY name ASC",
+                    "SELECT id, name, lat, lng, address, phone, map_url, area, added_by FROM clinics WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (added_by = 0 OR added_by IS NULL OR added_by = %s) ORDER BY name ASC",
                     (user_id,)
                 )
                 raw_clinics = cursor.fetchall()
             else:
-                cursor.execute("SELECT id, name, speciality, phone, added_by FROM doctors WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY name ASC")
+                cursor.execute("SELECT id, name, speciality, phone, area, added_by FROM doctors WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY name ASC")
                 doctors = cursor.fetchall()
 
-                cursor.execute("SELECT id, name, lat, lng, address, phone, map_url, added_by FROM clinics WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY name ASC")
+                cursor.execute("SELECT id, name, lat, lng, address, phone, map_url, area, added_by FROM clinics WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY name ASC")
                 raw_clinics = cursor.fetchall()
 
             clinics = [
@@ -268,15 +268,63 @@ def get_data():
                     "address": c.get("address", ""),
                     "phone": c.get("phone", ""),
                     "map_url": c.get("map_url", ""),
+                    "area": c.get("area", ""),
                     "added_by": c.get("added_by", 0)
                 }
                 for c in raw_clinics
             ]
+
+            cursor.execute("SELECT DISTINCT doctor_name, clinic_name, clinic_lat, clinic_lng, clinic_address, area FROM tasks WHERE doctor_name != '' AND clinic_name != '' ORDER BY id DESC")
+            raw_combos = cursor.fetchall()
+            combinations = [
+                {
+                    "doctor_name": cb["doctor_name"],
+                    "clinic_name": cb["clinic_name"],
+                    "clinic_lat": float(cb["clinic_lat"] or 0),
+                    "clinic_lng": float(cb["clinic_lng"] or 0),
+                    "clinic_address": cb.get("clinic_address", ""),
+                    "area": cb.get("area", "")
+                }
+                for cb in raw_combos
+            ]
+
+            cursor.execute("CREATE TABLE IF NOT EXISTS areas (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, added_by INT UNSIGNED NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS deleted_areas (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, area VARCHAR(100) NOT NULL UNIQUE, deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute("SELECT area FROM deleted_areas")
+            deleted_areas = [str(r["area"]).strip().lower() for r in cursor.fetchall() if r.get("area")]
+
+            areas_set = ["All Areas"]
+            default_areas = ["Chennai", "Villupuram", "Cuddalore", "Tindivanam"]
+            for da in default_areas:
+                if da not in areas_set and da.lower() not in deleted_areas:
+                    areas_set.append(da)
+
+            cursor.execute("SELECT name FROM areas")
+            for r in cursor.fetchall():
+                a = str(r.get("name") or "").strip()
+                if a and a not in areas_set and a.lower() not in deleted_areas:
+                    areas_set.append(a)
+
+            for d in doctors:
+                a = str(d.get("area") or "").strip()
+                if a and a not in areas_set and a.lower() not in deleted_areas:
+                    areas_set.append(a)
+            for c in clinics:
+                a = str(c.get("area") or "").strip()
+                if a and a not in areas_set and a.lower() not in deleted_areas:
+                    areas_set.append(a)
+            for cb in combinations:
+                a = str(cb.get("area") or "").strip()
+                if a and a not in areas_set and a.lower() not in deleted_areas:
+                    areas_set.append(a)
+
         conn.close()
 
         return jsonify({
+            "areas": areas_set,
             "doctors": doctors,
-            "clinics": clinics
+            "clinics": clinics,
+            "combinations": combinations
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -363,6 +411,7 @@ def get_user_tasks():
                 "doctor_name": str(row.get('doctor_name') or ''),
                 "clinic_name": str(row.get('clinic_name') or ''),
                 "task_category": str(row.get('task_category') or ''),
+                "area": str(row.get('area') or ''),
                 "source_lat": float(row['source_lat']) if row.get('source_lat') is not None else None,
                 "source_lng": float(row['source_lng']) if row.get('source_lng') is not None else None,
                 "source_address": str(row.get('source_address') or ''),
@@ -422,7 +471,7 @@ def get_pending_tasks():
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, clinic_lat, clinic_lng, clinic_address, notes, status, created_at FROM tasks WHERE user_id = %s AND status = 'pending' ORDER BY created_at DESC",
+                "SELECT id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, area, clinic_lat, clinic_lng, clinic_address, notes, status, created_at FROM tasks WHERE user_id = %s AND status = 'pending' ORDER BY created_at DESC",
                 (user_id,)
             )
             rows = cursor.fetchall()
@@ -437,6 +486,7 @@ def get_pending_tasks():
                 "doctor_name": row.get('doctor_name') or '',
                 "clinic_name": row.get('clinic_name') or '',
                 "task_category": row.get('task_category') or '',
+                "area": str(row.get('area') or ''),
                 "source_lat": float(row['source_lat']) if row.get('source_lat') is not None else None,
                 "source_lng": float(row['source_lng']) if row.get('source_lng') is not None else None,
                 "source_address": row.get('source_address') or '',
@@ -479,6 +529,7 @@ def save_task():
     doctor_name = str(data.get('doctor_name', '')).strip()
     clinic_name = str(data.get('clinic_name', '')).strip()
     task_category = str(data.get('task_category', '')).strip()
+    area = str(data.get('area', '')).strip()
     source_lat = float(data.get('source_lat', 0))
     source_lng = float(data.get('source_lng', 0))
     clinic_lat = float(data.get('clinic_lat', 0))
@@ -495,18 +546,18 @@ def save_task():
             if task_id > 0:
                 cursor.execute(
                     """UPDATE tasks 
-                       SET user_id = %s, sales_rep_name = %s, task_basis = %s, doctor_name = %s, clinic_name = %s, task_category = %s, source_lat = %s, source_lng = %s, clinic_lat = %s, clinic_lng = %s, clinic_address = %s, notes = %s
+                       SET user_id = %s, sales_rep_name = %s, task_basis = %s, doctor_name = %s, clinic_name = %s, task_category = %s, area = %s, source_lat = %s, source_lng = %s, clinic_lat = %s, clinic_lng = %s, clinic_address = %s, notes = %s
                        WHERE id = %s""",
-                    (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes, task_id)
+                    (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, area, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes, task_id)
                 )
                 res_id = task_id
                 msg = "Task updated!"
             else:
                 cursor.execute(
                     """INSERT INTO tasks 
-                       (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes, status)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')""",
-                    (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes)
+                       (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, area, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')""",
+                    (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, area, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes)
                 )
                 res_id = cursor.lastrowid
                 msg = "Task saved!"
@@ -1185,6 +1236,7 @@ def add_doctor():
     name = str(data.get('name', '')).strip()
     speciality = str(data.get('speciality', '')).strip()
     phone = str(data.get('phone', '')).strip()
+    area = str(data.get('area', '')).strip()
     added_by = int(data.get('added_by', 0))
 
     if not name:
@@ -1193,14 +1245,14 @@ def add_doctor():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO doctors (name, speciality, phone, added_by, is_deleted) VALUES (%s, %s, %s, %s, 0)", (name, speciality or 'General Physician', phone, added_by))
+            cursor.execute("INSERT INTO doctors (name, speciality, phone, area, added_by, is_deleted) VALUES (%s, %s, %s, %s, %s, 0)", (name, speciality or 'General Physician', phone, area, added_by))
             doc_id = cursor.lastrowid
         conn.close()
 
         return jsonify({
             "success": True,
             "message": "Doctor added!",
-            "doctor": {"id": doc_id, "name": name, "speciality": speciality, "phone": phone, "added_by": added_by}
+            "doctor": {"id": doc_id, "name": name, "speciality": speciality, "phone": phone, "area": area, "added_by": added_by}
         }), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 200
@@ -1221,6 +1273,7 @@ def add_clinic():
     map_url = str(data.get('map_url', '')).strip()
     lat = float(data.get('lat', 0.0))
     lng = float(data.get('lng', 0.0))
+    area = str(data.get('area', '')).strip()
     added_by = int(data.get('added_by', 0))
 
     if not name or lat == 0 or lng == 0:
@@ -1230,8 +1283,8 @@ def add_clinic():
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO clinics (name, lat, lng, address, phone, map_url, added_by, is_deleted) VALUES (%s, %s, %s, %s, %s, %s, %s, 0)",
-                (name, lat, lng, address, phone, map_url, added_by)
+                "INSERT INTO clinics (name, lat, lng, address, phone, map_url, area, added_by, is_deleted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)",
+                (name, lat, lng, address, phone, map_url, area, added_by)
             )
             clinic_id = cursor.lastrowid
         conn.close()
@@ -1239,7 +1292,40 @@ def add_clinic():
         return jsonify({
             "success": True,
             "message": "Clinic added!",
-            "clinic": {"id": clinic_id, "name": name, "lat": lat, "lng": lng, "address": address, "phone": phone, "map_url": map_url, "added_by": added_by}
+            "clinic": {"id": clinic_id, "name": name, "lat": lat, "lng": lng, "address": address, "phone": phone, "map_url": map_url, "area": area, "added_by": added_by}
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 200
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 15A. ADD AREA / DIVISION
+# ───────────────────────────────────────────────────────────────────────────────
+@app.route('/backend/add_area.php', methods=['POST', 'OPTIONS'])
+@app.route('/add_area', methods=['POST', 'OPTIONS'])
+def add_area():
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name', '') or data.get('area', '')).strip()
+    added_by = int(data.get('added_by', 0))
+
+    if not name or name.lower() == 'all areas':
+        return jsonify({"success": False, "message": "Valid Area / Division name is required."}), 200
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS areas (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, added_by INT UNSIGNED NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS deleted_areas (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, area VARCHAR(100) NOT NULL UNIQUE, deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute("DELETE FROM deleted_areas WHERE LOWER(area) = LOWER(%s)", (name,))
+            cursor.execute("INSERT INTO areas (name, added_by) VALUES (%s, %s) ON DUPLICATE KEY UPDATE added_by = VALUES(added_by)", (name, added_by))
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Area added successfully!",
+            "area": name
         }), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 200
@@ -1369,18 +1455,9 @@ def restore_doctor_clinic():
 def _extract_coords_from_string(text):
     if not text:
         return None
-    # 1. @lat,lng
-    m = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)', text)
-    if m:
-        try:
-            lat, lng = float(m.group(1)), float(m.group(2))
-            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
-                return lat, lng
-        except Exception:
-            pass
 
-    # 2. !3dlat!4dlng or !4dlng!3dlat
-    m3d = re.search(r'!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)', text)
+    # 1. PRIORITY 1: Exact Google Maps Place / Dropped Pin (!3d<lat>!4d<lng> or !4d<lng>!3d<lat>)
+    m3d = re.search(r'!3d(-?\d+\.\d+).*?!4d(-?\d+\.\d+)', text, re.DOTALL)
     if m3d:
         try:
             lat, lng = float(m3d.group(1)), float(m3d.group(2))
@@ -1389,7 +1466,7 @@ def _extract_coords_from_string(text):
         except Exception:
             pass
 
-    m4d = re.search(r'!4d(-?\d+\.\d+)!3d(-?\d+\.\d+)', text)
+    m4d = re.search(r'!4d(-?\d+\.\d+).*?!3d(-?\d+\.\d+)', text, re.DOTALL)
     if m4d:
         try:
             lat, lng = float(m4d.group(2)), float(m4d.group(1))
@@ -1398,8 +1475,17 @@ def _extract_coords_from_string(text):
         except Exception:
             pass
 
-    # 3. Query params: q, query, loc, center, ll, destination, origin, daddr, saddr
-    mq = re.search(r'[?&](?:q|query|loc|center|ll|destination|origin|daddr|saddr)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)', text, re.IGNORECASE)
+    # 2. PRIORITY 2: Explicit Target Location / Destination / Query / Pinned coords
+    md = re.search(r'[?&](?:destination|daddr)=(-?\d+\.\d+)[,+](-?\d+\.\d+)', text, re.IGNORECASE)
+    if md:
+        try:
+            lat, lng = float(md.group(1)), float(md.group(2))
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
+                return lat, lng
+        except Exception:
+            pass
+
+    mq = re.search(r'[?&](?:q|query|loc|ll|saddr)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)', text, re.IGNORECASE)
     if mq:
         try:
             lat, lng = float(mq.group(1)), float(mq.group(2))
@@ -1408,7 +1494,7 @@ def _extract_coords_from_string(text):
         except Exception:
             pass
 
-    # 4. geo: URI
+    # 3. PRIORITY 3: geo: URI
     mg = re.search(r'geo:(-?\d+\.\d+),(-?\d+\.\d+)', text, re.IGNORECASE)
     if mg:
         try:
@@ -1418,17 +1504,28 @@ def _extract_coords_from_string(text):
         except Exception:
             pass
 
-    # 5. staticmap center
-    ms = re.search(r'staticmap\?[^"]*center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)', text, re.IGNORECASE)
-    if ms:
+    # 4. PRIORITY 4: Static map marker or OpenGraph marker coordinates
+    mm = re.search(r'markers=(?:[^&]*?(?:%7C|\|))?(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)', text, re.IGNORECASE)
+    if mm:
         try:
-            lat, lng = float(ms.group(1)), float(ms.group(2))
+            lat, lng = float(mm.group(1)), float(mm.group(2))
             if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
                 return lat, lng
         except Exception:
             pass
 
-    # 6. APP_INITIALIZATION_STATE or js array
+    # Schema.org meta
+    mlat = re.search(r'itemprop="latitude"[^>]*content="(-?\d+\.\d+)"', text, re.IGNORECASE)
+    mlng = re.search(r'itemprop="longitude"[^>]*content="(-?\d+\.\d+)"', text, re.IGNORECASE)
+    if mlat and mlng:
+        try:
+            lat, lng = float(mlat.group(1)), float(mlng.group(1))
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
+                return lat, lng
+        except Exception:
+            pass
+
+    # APP_INITIALIZATION_STATE or js array
     mapp = re.search(r'window\.APP_INITIALIZATION_STATE\s*=\s*\[\[\[(-?\d+\.\d+),(-?\d+\.\d+)\]', text)
     if mapp:
         try:
@@ -1447,7 +1544,27 @@ def _extract_coords_from_string(text):
         except Exception:
             pass
 
-    # 7. Plain coordinates e.g. "13.0827, 80.2707"
+    # 5. PRIORITY 5: Viewport / Camera Coordinates (@lat,lng)
+    m = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)', text)
+    if m:
+        try:
+            lat, lng = float(m.group(1)), float(m.group(2))
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
+                return lat, lng
+        except Exception:
+            pass
+
+    # staticmap center fallback
+    ms = re.search(r'staticmap\?[^"]*center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)', text, re.IGNORECASE)
+    if ms:
+        try:
+            lat, lng = float(ms.group(1)), float(ms.group(2))
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
+                return lat, lng
+        except Exception:
+            pass
+
+    # 6. PRIORITY 6: Plain coordinates e.g. "13.0827, 80.2707"
     mp = re.search(r'^\s*\(?\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\)?\s*$', text)
     if mp:
         try:
@@ -1550,7 +1667,7 @@ def push_location():
         return jsonify({"success": False, "message": str(e)}), 200
 
 # ───────────────────────────────────────────────────────────────────────────────
-# 18. DELETE DOCTOR / CLINIC (SOFT DELETE)
+# 18. DELETE DOCTOR / CLINIC / AREA (SOFT DELETE)
 # ───────────────────────────────────────────────────────────────────────────────
 @app.route('/backend/delete_doctor_clinic.php', methods=['POST', 'OPTIONS'])
 @app.route('/delete_doctor_clinic', methods=['POST', 'OPTIONS'])
@@ -1563,15 +1680,30 @@ def delete_doctor_clinic():
     clinic_ids = data.get('clinic_ids') or []
     doctor_names = data.get('doctor_names') or []
     clinic_names = data.get('clinic_names') or []
+    area_names = data.get('area_names') or []
 
-    if not doctor_ids and not clinic_ids and not doctor_names and not clinic_names:
+    if not doctor_ids and not clinic_ids and not doctor_names and not clinic_names and not area_names:
         return jsonify({"success": False, "message": "No records selected for deletion."}), 200
 
     try:
         conn = get_db_connection()
         deleted_doctor_ids = []
         deleted_clinic_ids = []
+        deleted_area_names = []
         with conn.cursor() as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS deleted_areas (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, area VARCHAR(100) NOT NULL UNIQUE, deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            for a_name in area_names:
+                area = str(a_name).strip()
+                if not area or area.lower() == 'all areas':
+                    continue
+                try:
+                    cursor.execute("INSERT INTO deleted_areas (area, deleted_at) VALUES (%s, NOW()) ON DUPLICATE KEY UPDATE deleted_at = NOW()", (area,))
+                    cursor.execute("UPDATE doctors SET area = '' WHERE area = %s", (area,))
+                    cursor.execute("UPDATE clinics SET area = '' WHERE area = %s", (area,))
+                    deleted_area_names.append(area)
+                except Exception:
+                    pass
+
             for d_id in doctor_ids:
                 try:
                     cursor.execute("UPDATE doctors SET is_deleted = 1, deleted_at = NOW() WHERE id = %s", (int(d_id),))
@@ -1601,18 +1733,19 @@ def delete_doctor_clinic():
                     pass
 
         conn.close()
-        total = max(len(deleted_doctor_ids) + len(deleted_clinic_ids), len(doctor_names) + len(clinic_names))
+        total = max(len(deleted_doctor_ids) + len(deleted_clinic_ids) + len(deleted_area_names), len(doctor_names) + len(clinic_names) + len(area_names))
         return jsonify({
             "success": True,
             "message": f"{total} record{'s' if total != 1 else ''} deleted successfully.",
             "deleted_doctor_ids": deleted_doctor_ids,
-            "deleted_clinic_ids": deleted_clinic_ids
+            "deleted_clinic_ids": deleted_clinic_ids,
+            "deleted_area_names": deleted_area_names
         }), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 200
 
 # ───────────────────────────────────────────────────────────────────────────────
-# 19. RESTORE DOCTOR / CLINIC (UNDO SOFT DELETE)
+# 19. RESTORE DOCTOR / CLINIC / AREA (UNDO SOFT DELETE)
 # ───────────────────────────────────────────────────────────────────────────────
 @app.route('/backend/restore_doctor_clinic.php', methods=['POST', 'OPTIONS'])
 @app.route('/restore_doctor_clinic', methods=['POST', 'OPTIONS'])
@@ -1625,12 +1758,67 @@ def restore_doctor_clinic():
     clinic_ids = data.get('clinic_ids') or []
     doctor_names = data.get('doctor_names') or []
     clinic_names = data.get('clinic_names') or []
+    area_names = data.get('area_names') or []
 
-    if not doctor_ids and not clinic_ids and not doctor_names and not clinic_names:
+    if not doctor_ids and not clinic_ids and not doctor_names and not clinic_names and not area_names:
         return jsonify({"success": False, "message": "No records specified to restore."}), 200
 
     try:
         conn = get_db_connection()
+        restored_doctor_ids = []
+        restored_clinic_ids = []
+        restored_area_names = []
+        with conn.cursor() as cursor:
+            for a_name in area_names:
+                area = str(a_name).strip()
+                if not area:
+                    continue
+                try:
+                    cursor.execute("DELETE FROM deleted_areas WHERE area = %s", (area,))
+                    restored_area_names.append(area)
+                except Exception:
+                    pass
+
+            for d_id in doctor_ids:
+                try:
+                    cursor.execute("UPDATE doctors SET is_deleted = 0, deleted_at = NULL WHERE id = %s", (int(d_id),))
+                    if cursor.rowcount > 0:
+                        restored_doctor_ids.append(int(d_id))
+                except Exception:
+                    pass
+
+            for d_name in doctor_names:
+                try:
+                    cursor.execute("UPDATE doctors SET is_deleted = 0, deleted_at = NULL WHERE name = %s", (str(d_name),))
+                except Exception:
+                    pass
+
+            for c_id in clinic_ids:
+                try:
+                    cursor.execute("UPDATE clinics SET is_deleted = 0, deleted_at = NULL WHERE id = %s", (int(c_id),))
+                    if cursor.rowcount > 0:
+                        restored_clinic_ids.append(int(c_id))
+                except Exception:
+                    pass
+
+            for c_name in clinic_names:
+                try:
+                    cursor.execute("UPDATE clinics SET is_deleted = 0, deleted_at = NULL WHERE name = %s", (str(c_name),))
+                except Exception:
+                    pass
+
+        conn.close()
+        total = max(len(restored_doctor_ids) + len(restored_clinic_ids) + len(restored_area_names), len(doctor_names) + len(clinic_names) + len(area_names))
+        return jsonify({
+            "success": True,
+            "message": f"{total} record{'s' if total != 1 else ''} restored successfully.",
+            "restored_doctor_ids": restored_doctor_ids,
+            "deleted_doctor_ids": restored_doctor_ids,
+            "deleted_clinic_ids": restored_clinic_ids,
+            "restored_area_names": restored_area_names
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 200
         restored_doctor_ids = []
         restored_clinic_ids = []
         with conn.cursor() as cursor:

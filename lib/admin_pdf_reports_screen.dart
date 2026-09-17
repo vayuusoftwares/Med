@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -299,9 +300,211 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
         .trim();
   }
 
-  // ─── PDF Generation Logic ──────────────────────────────────────────────────
+  // ─── PDF Generation & View Logic ──────────────────────────────────────────
 
-  Future<void> _handleGeneratePdf() async {
+  pw.Document _buildPdfDocument({
+    required List<Map<String, dynamic>> reportTasks,
+    required String targetRepName,
+    required String reportTypeName,
+    required String sanitizedRep,
+    required Map<String, dynamic>? repData,
+    required String dateFilterStr,
+    required int totalAssigned,
+    required int totalCompleted,
+    required int totalPending,
+    required double completionRate,
+    required int perfGreen,
+    required int perfRed,
+    required int perfOverdue,
+    required int perfPoints,
+    required int perfScore,
+    required String nowFormatted,
+  }) {
+    final pdf = pw.Document(
+      title: '$targetRepName - $reportTypeName',
+      author: 'MedSafe Life Science Admin Portal',
+    );
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+        header: (pw.Context context) {
+          return pw.Container(
+            margin: const pw.EdgeInsets.only(bottom: 10),
+            padding: const pw.EdgeInsets.only(bottom: 6),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.teal800, width: 1.5),
+              ),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'MedSafe Life Science',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.teal900,
+                      ),
+                    ),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      'Pharmaceuticals & Field Operations Management System',
+                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                    ),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.teal50,
+                        borderRadius: pw.BorderRadius.circular(4),
+                        border: pw.Border.all(color: PdfColors.teal200, width: 0.8),
+                      ),
+                      child: pw.Text(
+                        reportTypeName.toUpperCase(),
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.teal900,
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 3),
+                    pw.Text(
+                      'Generated: $nowFormatted',
+                      style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+        footer: (pw.Context context) {
+          return pw.Container(
+            margin: const pw.EdgeInsets.only(top: 8),
+            padding: const pw.EdgeInsets.only(top: 4),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                top: pw.BorderSide(color: PdfColors.grey300, width: 0.8),
+              ),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Official MedSafe Life Science Field Performance Document • Single Source of Truth',
+                  style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
+                ),
+                pw.Text(
+                  'Page ${context.pageNumber} of ${context.pagesCount}',
+                  style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700),
+                ),
+              ],
+            ),
+          );
+        },
+        build: (pw.Context context) {
+          return [
+            // ── Medical Rep Info & Metadata Card ──
+            pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                borderRadius: pw.BorderRadius.circular(6),
+                border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Row(
+                        children: [
+                          pw.Text('Medical Rep: ', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey800)),
+                          pw.Text(targetRepName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900)),
+                        ],
+                      ),
+                      pw.SizedBox(height: 2),
+                      if (repData != null) ...[
+                        pw.Text(
+                          'Email: ${repData['email'] ?? 'N/A'}  •  Phone: ${repData['phone'] ?? 'N/A'}',
+                          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                        ),
+                      ] else ...[
+                        pw.Text('Scope: All Field Representatives', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                      ],
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('Date Filter: $dateFilterStr', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                      pw.SizedBox(height: 2),
+                      pw.Text('Records in Report: ${reportTasks.length}', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.teal800)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            pw.SizedBox(height: 8),
+
+            // ── Summary KPI Cards ──
+            if (_selectedReportType == AdminReportType.performance) ...[
+              pw.Row(
+                children: [
+                  _buildPdfKpiCard('Total Tasks', '$totalAssigned', PdfColors.blue50, PdfColors.blue900, PdfColors.blue200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Green (On Time)', '$perfGreen', PdfColors.green50, PdfColors.green900, PdfColors.green200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Red (Late)', '$perfRed', PdfColors.red50, PdfColors.red900, PdfColors.red200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Overdue', '$perfOverdue', PdfColors.red50, PdfColors.red900, PdfColors.red200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Points Earned', perfPoints >= 0 ? '+$perfPoints pts' : '$perfPoints pts', PdfColors.purple50, PdfColors.purple900, PdfColors.purple200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Performance Score', '$perfScore / 100', PdfColors.teal50, PdfColors.teal900, PdfColors.teal200),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+            ] else if (_selectedReportType == AdminReportType.overall || totalAssigned > 0) ...[
+              pw.Row(
+                children: [
+                  _buildPdfKpiCard('Total Assigned', '$totalAssigned', PdfColors.blue50, PdfColors.blue900, PdfColors.blue200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Total Completed', '$totalCompleted', PdfColors.green50, PdfColors.green900, PdfColors.green200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Total Pending', '$totalPending', PdfColors.orange50, PdfColors.orange900, PdfColors.orange200),
+                  pw.SizedBox(width: 6),
+                  _buildPdfKpiCard('Completion Rate', '${completionRate.toStringAsFixed(1)}%', PdfColors.teal50, PdfColors.teal900, PdfColors.teal200),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+            ],
+
+            // ── Report Table ──
+            _buildPdfTable(reportTasks),
+          ];
+        },
+      ),
+    );
+
+    return pdf;
+  }
+
+  Future<void> _handleViewReport() async {
     // 1. Validation: Medical Rep Selected
     if (_selectedRepName == null || _selectedRepName!.trim().isEmpty) {
       _showWarningSnackBar('Please select a Medical Rep.');
@@ -358,12 +561,6 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
 
       final fileName = '${sanitizedRep}_$fileTypeSuffix.pdf';
 
-      // Build Document
-      final pdf = pw.Document(
-        title: '$targetRepName - $reportTypeName',
-        author: 'MedSafe Life Science Admin Portal',
-      );
-
       final totalAllRepTasks = _getRepTasks();
       final totalAssigned = totalAllRepTasks.length;
       final totalCompleted = totalAllRepTasks.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'completed').length;
@@ -401,193 +598,46 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
         dateFilterStr = 'Up to ${DateFormat('dd/MM/yyyy').format(_toDate!)}';
       }
 
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 22),
-          header: (pw.Context context) {
-            return pw.Container(
-              margin: const pw.EdgeInsets.only(bottom: 10),
-              padding: const pw.EdgeInsets.only(bottom: 6),
-              decoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(color: PdfColors.teal800, width: 1.5),
-                ),
-              ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'MedSafe Life Science',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.teal900,
-                        ),
-                      ),
-                      pw.SizedBox(height: 2),
-                      pw.Text(
-                        'Pharmaceuticals & Field Operations Management System',
-                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-                      ),
-                    ],
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.teal50,
-                          borderRadius: pw.BorderRadius.circular(4),
-                          border: pw.Border.all(color: PdfColors.teal200, width: 0.8),
-                        ),
-                        child: pw.Text(
-                          reportTypeName.toUpperCase(),
-                          style: pw.TextStyle(
-                            fontSize: 9,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.teal900,
-                          ),
-                        ),
-                      ),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        'Generated: $nowFormatted',
-                        style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-          footer: (pw.Context context) {
-            return pw.Container(
-              margin: const pw.EdgeInsets.only(top: 8),
-              padding: const pw.EdgeInsets.only(top: 4),
-              decoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  top: pw.BorderSide(color: PdfColors.grey300, width: 0.8),
-                ),
-              ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Official MedSafe Life Science Field Performance Document • Single Source of Truth',
-                    style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
-                  ),
-                  pw.Text(
-                    'Page ${context.pageNumber} of ${context.pagesCount}',
-                    style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700),
-                  ),
-                ],
-              ),
-            );
-          },
-          build: (pw.Context context) {
-            return [
-              // ── Medical Rep Info & Metadata Card ──
-              pw.Container(
-                padding: const pw.EdgeInsets.all(8),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.grey100,
-                  borderRadius: pw.BorderRadius.circular(6),
-                  border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
-                ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Row(
-                          children: [
-                            pw.Text('Medical Rep: ', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey800)),
-                            pw.Text(targetRepName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900)),
-                          ],
-                        ),
-                        pw.SizedBox(height: 2),
-                        if (repData != null) ...[
-                          pw.Text(
-                            'Email: ${repData['email'] ?? 'N/A'}  •  Phone: ${repData['phone'] ?? 'N/A'}',
-                            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-                          ),
-                        ] else ...[
-                          pw.Text('Scope: All Field Representatives', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                        ],
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text('Date Filter: $dateFilterStr', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                        pw.SizedBox(height: 2),
-                        pw.Text('Records in Report: ${reportTasks.length}', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.teal800)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+      // Build Document
+      final pdf = _buildPdfDocument(
+        reportTasks: reportTasks,
+        targetRepName: targetRepName,
+        reportTypeName: reportTypeName,
+        sanitizedRep: sanitizedRep,
+        repData: repData,
+        dateFilterStr: dateFilterStr,
+        totalAssigned: totalAssigned,
+        totalCompleted: totalCompleted,
+        totalPending: totalPending,
+        completionRate: completionRate,
+        perfGreen: perfGreen,
+        perfRed: perfRed,
+        perfOverdue: perfOverdue,
+        perfPoints: perfPoints,
+        perfScore: perfScore,
+        nowFormatted: nowFormatted,
+      );
 
-              pw.SizedBox(height: 8),
+      setState(() => _generatingPdf = false);
 
-              // ── Summary KPI Cards ──
-              if (_selectedReportType == AdminReportType.performance) ...[
-                pw.Row(
-                  children: [
-                    _buildPdfKpiCard('Total Tasks', '$totalAssigned', PdfColors.blue50, PdfColors.blue900, PdfColors.blue200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Green (On Time)', '$perfGreen', PdfColors.green50, PdfColors.green900, PdfColors.green200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Red (Late)', '$perfRed', PdfColors.red50, PdfColors.red900, PdfColors.red200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Overdue', '$perfOverdue', PdfColors.red50, PdfColors.red900, PdfColors.red200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Points Earned', perfPoints >= 0 ? '+$perfPoints pts' : '$perfPoints pts', PdfColors.purple50, PdfColors.purple900, PdfColors.purple200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Performance Score', '$perfScore / 100', PdfColors.teal50, PdfColors.teal900, PdfColors.teal200),
-                  ],
-                ),
-                pw.SizedBox(height: 10),
-              ] else if (_selectedReportType == AdminReportType.overall || totalAssigned > 0) ...[
-                pw.Row(
-                  children: [
-                    _buildPdfKpiCard('Total Assigned', '$totalAssigned', PdfColors.blue50, PdfColors.blue900, PdfColors.blue200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Total Completed', '$totalCompleted', PdfColors.green50, PdfColors.green900, PdfColors.green200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Total Pending', '$totalPending', PdfColors.orange50, PdfColors.orange900, PdfColors.orange200),
-                    pw.SizedBox(width: 6),
-                    _buildPdfKpiCard('Completion Rate', '${completionRate.toStringAsFixed(1)}%', PdfColors.teal50, PdfColors.teal900, PdfColors.teal200),
-                  ],
-                ),
-                pw.SizedBox(height: 10),
-              ],
+      if (!mounted) return;
 
-              // ── Report Table ──
-              _buildPdfTable(reportTasks),
-            ];
-          },
+      // Navigate to View Mode inside AdminReportViewerScreen (No automatic download!)
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AdminReportViewerScreen(
+            pdfDocument: pdf,
+            fileName: fileName,
+            reportTitle: reportTypeName,
+            repName: targetRepName,
+            recordsCount: reportTasks.length,
+          ),
         ),
       );
-
-      setState(() => _generatingPdf = false);
-
-      // Trigger automatic printing/download dialog
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save(),
-        name: fileName,
-      );
     } catch (e, stack) {
-      debugPrint('[PDF Report] Error generating PDF: $e\n$stack');
+      debugPrint('[PDF Report] Error preparing report view: $e\n$stack');
       setState(() => _generatingPdf = false);
-      _showErrorDialog('Failed to generate PDF: $e');
+      _showErrorDialog('Failed to open report view: $e');
     }
   }
 
@@ -640,6 +690,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           final t = tasks[i];
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
+          final area = (t['area'] ?? '').toString().trim();
           final category = (t['task_category'] ?? '—').toString();
           final rep = (t['sales_rep_name'] ?? '—').toString();
           final createdAt = (t['created_at'] ?? '').toString();
@@ -653,9 +704,11 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           final pts = (t['points_earned'] as num?)?.toInt() ?? 0;
           final ptsStr = pts > 0 ? '+$pts' : (pts < 0 ? '$pts' : '0');
 
+          final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
+
           return [
             '${i + 1}',
-            'Dr. $doc\n$clinic',
+            docClinicDisplay,
             category.isNotEmpty ? category : '—',
             rep,
             assignedDate.isNotEmpty ? assignedDate : '—',
@@ -691,6 +744,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           final t = tasks[i];
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
+          final area = (t['area'] ?? '').toString().trim();
           final addr = (t['clinic_address'] ?? '').toString();
           final notes = (t['notes'] ?? '').toString();
           final category = (t['task_category'] ?? '—').toString();
@@ -703,9 +757,11 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
               ? '$addr\nNote: $notes'
               : (addr.isNotEmpty ? addr : (notes.isNotEmpty ? 'Note: $notes' : '—'));
 
+          final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
+
           return [
             '${i + 1}',
-            'Dr. $doc\n$clinic',
+            docClinicDisplay,
             addressNote,
             category.isNotEmpty ? category : '—',
             basis,
@@ -738,6 +794,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           final t = tasks[i];
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
+          final area = (t['area'] ?? '').toString().trim();
           final category = (t['task_category'] ?? '—').toString();
           final basis = (t['task_basis'] ?? 'Daily').toString();
           final createdAt = (t['created_at'] ?? '').toString();
@@ -759,10 +816,11 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
 
           final mode = (t['checkout_type'] ?? 'ONLINE').toString().toUpperCase();
           final status = (t['status'] ?? 'completed').toString().toUpperCase();
+          final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
 
           return [
             '${i + 1}',
-            'Dr. $doc\n$clinic',
+            docClinicDisplay,
             category.isNotEmpty ? category : '—',
             basis,
             assignedDate.isNotEmpty ? assignedDate : '—',
@@ -796,6 +854,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           final t = tasks[i];
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
+          final area = (t['area'] ?? '').toString().trim();
           final category = (t['task_category'] ?? '—').toString();
           final basis = (t['task_basis'] ?? 'Daily').toString();
           final createdAt = (t['created_at'] ?? '').toString();
@@ -816,10 +875,11 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           }
 
           final status = (t['status'] ?? 'pending').toString().toUpperCase();
+          final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
 
           return [
             '${i + 1}',
-            'Dr. $doc\n$clinic',
+            docClinicDisplay,
             category.isNotEmpty ? category : '—',
             basis,
             assignedDate.isNotEmpty ? assignedDate : '—',
@@ -2186,7 +2246,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
     );
   }
 
-  // ─── Step 6: Generate PDF Report Button Widget ─────────────────────────────
+  // ─── Step 6: View & Generate Report Button Widget ─────────────────────────
 
   Widget _buildGenerateButton() {
     return Container(
@@ -2204,7 +2264,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
         ],
       ),
       child: ElevatedButton.icon(
-        onPressed: _generatingPdf ? null : _handleGeneratePdf,
+        onPressed: _generatingPdf ? null : _handleViewReport,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
@@ -2218,10 +2278,272 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
               )
-            : const Icon(Icons.picture_as_pdf_rounded, size: 22, color: Colors.white),
+            : const Icon(Icons.visibility_rounded, size: 22, color: Colors.white),
         label: Text(
-          _generatingPdf ? 'Generating PDF Report...' : 'Generate PDF Report',
+          _generatingPdf ? 'Loading Report View...' : 'View Report',
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 0.3),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Admin Report Viewer Screen (View & Download Mode) ────────────────────────
+
+class AdminReportViewerScreen extends StatefulWidget {
+  final pw.Document pdfDocument;
+  final String fileName;
+  final String reportTitle;
+  final String repName;
+  final int recordsCount;
+
+  const AdminReportViewerScreen({
+    super.key,
+    required this.pdfDocument,
+    required this.fileName,
+    required this.reportTitle,
+    required this.repName,
+    required this.recordsCount,
+  });
+
+  @override
+  State<AdminReportViewerScreen> createState() => _AdminReportViewerScreenState();
+}
+
+class _AdminReportViewerScreenState extends State<AdminReportViewerScreen> {
+  static const _emeraldPrimary = Color(0xFF00A86B);
+  static const _emeraldDark = Color(0xFF047857);
+  static const _darkText = Color(0xFF0F172A);
+  static const _subtext = Color(0xFF64748B);
+
+  bool _isDownloading = false;
+  Uint8List? _cachedPdfBytes;
+
+  Future<Uint8List> _getPdfBytes() async {
+    if (_cachedPdfBytes != null) return _cachedPdfBytes!;
+    final bytes = await widget.pdfDocument.save();
+    _cachedPdfBytes = bytes;
+    return bytes;
+  }
+
+  Future<void> _handleDownloadReport() async {
+    if (_isDownloading) return;
+    setState(() => _isDownloading = true);
+
+    try {
+      final bytes = await _getPdfBytes();
+
+      // Explicit download action requested by user
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: widget.fileName,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Report downloaded: ${widget.fileName}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: _emeraldPrimary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        iconTheme: const IconThemeData(color: _darkText),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.preview_rounded, color: _emeraldDark, size: 18),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    widget.reportTitle,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: _darkText,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              '${widget.repName} • ${widget.recordsCount} Record${widget.recordsCount == 1 ? '' : 's'}',
+              style: const TextStyle(fontSize: 11, color: _subtext),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: ElevatedButton.icon(
+              onPressed: _isDownloading ? null : _handleDownloadReport,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _emeraldPrimary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              icon: _isDownloading
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.download_rounded, size: 16),
+              label: const Text(
+                'Download Report',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Informational View Mode banner
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF0FDF4),
+                border: Border(bottom: BorderSide(color: Color(0xFFA7F3D0), width: 0.8)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.visibility_rounded, size: 16, color: _emeraldDark),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Report View Mode: Review the document below, then tap Download Report.',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFF065F46), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Pdf previewer in view mode
+            Expanded(
+              child: PdfPreview(
+                build: (format) => _getPdfBytes(),
+                allowPrinting: false,
+                allowSharing: false,
+                canChangePageFormat: false,
+                canChangeOrientation: false,
+                canDebug: false,
+                useActions: false,
+                previewPageMargin: const EdgeInsets.all(12),
+                loadingWidget: const Center(
+                  child: CircularProgressIndicator(color: _emeraldPrimary),
+                ),
+                scrollViewDecoration: const BoxDecoration(
+                  color: Color(0xFFF1F5F9),
+                ),
+                pdfFileName: widget.fileName,
+              ),
+            ),
+
+            // Persistent Bottom Action Bar
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: const Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.fileName,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _darkText),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Ready to download PDF',
+                          style: TextStyle(fontSize: 10.5, color: _subtext),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _isDownloading ? null : _handleDownloadReport,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _emeraldPrimary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 1,
+                    ),
+                    icon: _isDownloading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.file_download_rounded, size: 18),
+                    label: const Text(
+                      'Download Report',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

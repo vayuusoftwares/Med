@@ -23,8 +23,9 @@ $clinic_ids = isset($data['clinic_ids']) && is_array($data['clinic_ids']) ? $dat
 
 $doctor_names = isset($data['doctor_names']) && is_array($data['doctor_names']) ? $data['doctor_names'] : [];
 $clinic_names = isset($data['clinic_names']) && is_array($data['clinic_names']) ? $data['clinic_names'] : [];
+$area_names = isset($data['area_names']) && is_array($data['area_names']) ? $data['area_names'] : [];
 
-if (empty($doctor_ids) && empty($clinic_ids) && empty($doctor_names) && empty($clinic_names)) {
+if (empty($doctor_ids) && empty($clinic_ids) && empty($doctor_names) && empty($clinic_names) && empty($area_names)) {
   echo json_encode(["success" => false, "message" => "No records selected for deletion."]);
   exit;
 }
@@ -42,10 +43,44 @@ if ($conn->connect_error) {
 
 $deleted_doctor_ids = [];
 $deleted_clinic_ids = [];
+$deleted_area_names = [];
 
 $conn->begin_transaction();
 
 try {
+  // Ensure deleted_areas table exists
+  $conn->query("CREATE TABLE IF NOT EXISTS deleted_areas (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      area VARCHAR(100) NOT NULL UNIQUE,
+      deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )");
+
+  // Soft delete / register deleted areas
+  if (!empty($area_names)) {
+    foreach ($area_names as $aName) {
+      $area = trim((string)$aName);
+      if ($area === '' || strcasecmp($area, 'All Areas') === 0) continue;
+
+      $stmt = $conn->prepare("INSERT INTO deleted_areas (area, deleted_at) VALUES (?, NOW()) ON DUPLICATE KEY UPDATE deleted_at = NOW()");
+      $stmt->bind_param("s", $area);
+      $stmt->execute();
+      $stmt->close();
+
+      // Clear area on doctors and clinics with that area
+      $stmtDoc = $conn->prepare("UPDATE doctors SET area = '' WHERE area = ?");
+      $stmtDoc->bind_param("s", $area);
+      $stmtDoc->execute();
+      $stmtDoc->close();
+
+      $stmtClin = $conn->prepare("UPDATE clinics SET area = '' WHERE area = ?");
+      $stmtClin->bind_param("s", $area);
+      $stmtClin->execute();
+      $stmtClin->close();
+
+      $deleted_area_names[] = $area;
+    }
+  }
+
   // Soft delete doctors by ID
   if (!empty($doctor_ids)) {
     foreach ($doctor_ids as $dId) {
@@ -105,13 +140,14 @@ try {
   }
 
   $conn->commit();
-  $total = max(count($deleted_doctor_ids) + count($deleted_clinic_ids), count($doctor_names) + count($clinic_names));
+  $total = max(count($deleted_doctor_ids) + count($deleted_clinic_ids) + count($deleted_area_names), count($doctor_names) + count($clinic_names) + count($area_names));
 
   echo json_encode([
     "success" => true,
     "message" => "$total record" . ($total === 1 ? "" : "s") . " deleted successfully.",
     "deleted_doctor_ids" => $deleted_doctor_ids,
-    "deleted_clinic_ids" => $deleted_clinic_ids
+    "deleted_clinic_ids" => $deleted_clinic_ids,
+    "deleted_area_names" => $deleted_area_names
   ]);
 } catch (Exception $e) {
   $conn->rollback();

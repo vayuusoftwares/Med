@@ -28,14 +28,19 @@ void main() {
     expect(find.text('Medical Representative'), findsOneWidget);
   });
 
-  testWidgets('renders SHOW ALL button and opens management modal', (tester) async {
+  testWidgets('renders SHOW ALL button and opens management modal for Doctors and Clinics', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     await tester.pumpWidget(_wrapTaskScreen());
     await tester.pump(const Duration(milliseconds: 600));
 
     final showAllBtn = find.text('SHOW ALL');
     expect(showAllBtn, findsWidgets);
 
-    await tester.tap(showAllBtn.first);
+    // Tap the SHOW ALL in Task Assignment
+    await tester.tap(showAllBtn.last);
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
@@ -63,14 +68,18 @@ void main() {
   });
 
   testWidgets('opens doctor and clinic search pickers when browse icon is clicked', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     await tester.pumpWidget(_wrapTaskScreen());
     await tester.pump(const Duration(milliseconds: 600));
 
-    final browseButtons = find.byIcon(Icons.keyboard_arrow_down_rounded);
-    expect(browseButtons, findsWidgets);
+    final browseDoctorBtn = find.byTooltip('Browse Doctors');
+    expect(browseDoctorBtn, findsWidgets);
 
     // Tap browse doctors button
-    await tester.tap(browseButtons.first);
+    await tester.tap(browseDoctorBtn.first);
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
@@ -78,6 +87,10 @@ void main() {
   });
 
   testWidgets('pre-populates existingTask with matching Doctor and Clinic info', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     final taskData = {
       'id': 101,
       'task_basis': 'Daily',
@@ -98,5 +111,107 @@ void main() {
     expect(find.text('ABC Clinic'), findsWidgets);
     expect(find.text('MG Road, Bangalore'), findsWidgets);
     expect(find.text('Samples'), findsOneWidget);
+  });
+
+  testWidgets('renders Area / Division dropdown and supports opening area selector', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(_wrapTaskScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.text('Area / Division Filter'), findsOneWidget);
+    expect(find.text('All Areas (Show All Records)'), findsOneWidget);
+
+    // Tap on the Area selector
+    await tester.tap(find.text('All Areas (Show All Records)'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Select Area / Division'), findsOneWidget);
+    expect(find.text('Area: Chennai'), findsOneWidget);
+    expect(find.text('Area: Villupuram'), findsOneWidget);
+  });
+
+  testWidgets('renders Area field in Add Doctor dialog', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(_wrapTaskScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+
+    final addButtons = find.byTooltip('Add new doctor');
+    expect(addButtons, findsWidgets);
+
+    await tester.tap(addButtons.first);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Add New Doctor'), findsOneWidget);
+    expect(find.text('Area / Division (e.g. Chennai)'), findsOneWidget);
+  });
+
+  testWidgets('renders Area field in Add Clinic dialog', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(_wrapTaskScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+
+    final addClinicButtons = find.byTooltip('Add new clinic');
+    expect(addClinicButtons, findsWidgets);
+
+    await tester.tap(addClinicButtons.first);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Add New Clinic'), findsOneWidget);
+    expect(find.text('Area / Division (e.g. Chennai)'), findsOneWidget);
+  });
+
+  testWidgets('renders Area SHOW ALL button and opens Area Management Modal', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(_wrapTaskScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+
+    final showAllBtns = find.text('SHOW ALL');
+    expect(showAllBtns, findsWidgets);
+
+    // Tap first SHOW ALL (the one next to Area / Division Filter)
+    await tester.tap(showAllBtns.first);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Show All Areas / Divisions'), findsOneWidget);
+    expect(find.text('Select and delete obsolete or unused areas'), findsOneWidget);
+    expect(find.text('Select All'), findsOneWidget);
+    expect(find.text('Select areas to delete'), findsOneWidget);
+    expect(find.text('Chennai'), findsOneWidget);
+    expect(find.text('Villupuram'), findsOneWidget);
+  });
+
+  testWidgets('renders Add Area button and opens Add Area dialog', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(_wrapTaskScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+
+    final addAreaBtn = find.byTooltip('Add new area / division');
+    expect(addAreaBtn, findsOneWidget);
+
+    await tester.tap(addAreaBtn);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Add New Area'), findsOneWidget);
+    expect(find.text('Area / Division Name * (e.g. Coimbatore)'), findsOneWidget);
   });
 }

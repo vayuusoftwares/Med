@@ -39,6 +39,7 @@ class _TaskMapVerificationModalState extends State<TaskMapVerificationModal> {
   String _clinicAddress = '';
   String _salesRepName = '';
   String _notes = '';
+  String _area = '';
   int _taskId = 0;
   String _deadline = '';
   String _startedAt = '';
@@ -82,6 +83,7 @@ class _TaskMapVerificationModalState extends State<TaskMapVerificationModal> {
     _clinicAddress = (t['clinic_address'] ?? '').toString();
     _salesRepName = (t['sales_rep_name'] ?? '').toString();
     _notes = (t['notes'] ?? '').toString();
+    _area = (t['area'] ?? '').toString();
     _taskStatus = (t['status'] ?? '').toString();
 
     _deadline = (t['deadline_date_time'] ?? t['deadline'] ?? '').toString();
@@ -304,7 +306,7 @@ class _TaskMapVerificationModalState extends State<TaskMapVerificationModal> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Dr. $_doctorName • $_clinicName',
+                        'Dr. $_doctorName • $_clinicName${_area.isNotEmpty ? ' • AREA: ${_area.toUpperCase()}' : ''}',
                         style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -359,6 +361,21 @@ class _TaskMapVerificationModalState extends State<TaskMapVerificationModal> {
                                 ],
                               ),
                             ),
+                            if (_area.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                                ),
+                                child: Text(
+                                  'AREA: ${_area.toUpperCase()}',
+                                  style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                                ),
+                              ),
+                            ],
                             const Spacer(),
                             if (_salesRepName.isNotEmpty)
                               Text(

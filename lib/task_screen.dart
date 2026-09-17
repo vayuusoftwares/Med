@@ -15,11 +15,12 @@ class _Doctor {
   final String name;
   final String speciality;
   final String phone;
+  final String area;
   final int? addedBy;
 
-  const _Doctor(this.name, this.speciality, [this.phone = '', this.id, this.addedBy]);
+  const _Doctor(this.name, this.speciality, [this.phone = '', this.id, this.addedBy, this.area = '']);
 
-  String get uniqueKey => id != null ? 'doc_$id' : 'doc_${name}_$speciality';
+  String get uniqueKey => id != null ? 'doc_$id' : 'doc_${name}_${speciality}_$area';
 
   @override
   bool operator ==(Object other) =>
@@ -28,10 +29,10 @@ class _Doctor {
           runtimeType == other.runtimeType &&
           (id != null && other.id != null
               ? id == other.id
-              : name == other.name && speciality == other.speciality && phone == other.phone);
+              : name == other.name && speciality == other.speciality && phone == other.phone && area == other.area);
 
   @override
-  int get hashCode => id != null ? id.hashCode : Object.hash(name, speciality, phone);
+  int get hashCode => id != null ? id.hashCode : Object.hash(name, speciality, phone, area);
 }
 
 class _Clinic {
@@ -41,11 +42,12 @@ class _Clinic {
   final double lng;
   final String address;
   final String phone;
+  final String area;
   final int? addedBy;
 
-  const _Clinic(this.name, this.lat, this.lng, this.address, [this.phone = '', this.id, this.addedBy]);
+  const _Clinic(this.name, this.lat, this.lng, this.address, [this.phone = '', this.id, this.addedBy, this.area = '']);
 
-  String get uniqueKey => id != null ? 'clin_$id' : 'clin_${name}_${lat}_$lng';
+  String get uniqueKey => id != null ? 'clin_$id' : 'clin_${name}_${lat}_${lng}_$area';
 
   @override
   bool operator ==(Object other) =>
@@ -54,10 +56,10 @@ class _Clinic {
           runtimeType == other.runtimeType &&
           (id != null && other.id != null
               ? id == other.id
-              : name == other.name && lat == other.lat && lng == other.lng && address == other.address);
+              : name == other.name && lat == other.lat && lng == other.lng && address == other.address && area == other.area);
 
   @override
-  int get hashCode => id != null ? id.hashCode : Object.hash(name, lat, lng, address);
+  int get hashCode => id != null ? id.hashCode : Object.hash(name, lat, lng, address, area);
 }
 
 class _DoctorClinicSuggestion {
@@ -69,9 +71,11 @@ class _DoctorClinicSuggestion {
     required this.clinic,
   });
 
+  String get area => clinic.area.isNotEmpty ? clinic.area : doctor.area;
   String get title => '${doctor.name} — ${clinic.name}';
   String get subtitle {
     final parts = <String>[];
+    if (area.isNotEmpty) parts.add('AREA: ${area.toUpperCase()}');
     if (doctor.speciality.isNotEmpty) parts.add(doctor.speciality);
     if (clinic.address.isNotEmpty) parts.add(clinic.address);
     return parts.join(' • ');
@@ -136,6 +140,8 @@ class _TaskScreenState extends State<TaskScreen>
   List<_Doctor> _doctors = [];
   List<_Clinic> _clinics = [];
   List<_DoctorClinicSuggestion> _combinations = [];
+  String _selectedArea = 'All Areas';
+  List<String> _areas = ['All Areas', 'Chennai', 'Villupuram', 'Cuddalore', 'Tindivanam'];
   bool _isLoadingData = true;
   final List<String> _taskCategories = [
     'Gifts',
@@ -153,6 +159,36 @@ class _TaskScreenState extends State<TaskScreen>
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeIn;
   late final Animation<Offset> _slideUp;
+
+  List<_Doctor> get _filteredDoctors {
+    if (_selectedArea == 'All Areas' || _selectedArea.trim().isEmpty) {
+      return _doctors;
+    }
+    final target = _selectedArea.trim().toLowerCase();
+    final matches = _doctors.where((d) => d.area.trim().toLowerCase() == target).toList();
+    return matches.isNotEmpty ? matches : _doctors;
+  }
+
+  List<_Clinic> get _filteredClinics {
+    if (_selectedArea == 'All Areas' || _selectedArea.trim().isEmpty) {
+      return _clinics;
+    }
+    final target = _selectedArea.trim().toLowerCase();
+    final matches = _clinics.where((c) => c.area.trim().toLowerCase() == target).toList();
+    return matches.isNotEmpty ? matches : _clinics;
+  }
+
+  List<_DoctorClinicSuggestion> get _filteredCombinations {
+    if (_selectedArea == 'All Areas' || _selectedArea.trim().isEmpty) {
+      return _combinations;
+    }
+    final target = _selectedArea.trim().toLowerCase();
+    final matches = _combinations.where((cb) {
+      final a = cb.area.trim().toLowerCase();
+      return a == target || cb.doctor.area.trim().toLowerCase() == target || cb.clinic.area.trim().toLowerCase() == target;
+    }).toList();
+    return matches.isNotEmpty ? matches : _combinations;
+  }
 
   void _onTaskBasisChanged(String basis) {
     setState(() {
@@ -227,6 +263,7 @@ class _TaskScreenState extends State<TaskScreen>
       final qParams = '?user_id=${widget.salesRep.id}&role=${Uri.encodeComponent(widget.salesRep.role)}';
       final response = await _getRequest('/backend/get_data.php$qParams');
       final data = json.decode(response.body);
+      final areasJson = (data['areas'] as List?) ?? [];
       final doctorsJson = (data['doctors'] as List?) ?? [];
       final clinicsJson = (data['clinics'] as List?) ?? [];
       final combosJson = (data['combinations'] as List?) ?? [];
@@ -238,6 +275,7 @@ class _TaskScreenState extends State<TaskScreen>
                 d['phone']?.toString() ?? '',
                 (d['id'] as num?)?.toInt(),
                 (d['added_by'] as num?)?.toInt(),
+                d['area']?.toString() ?? '',
               ))
           .toList();
 
@@ -250,6 +288,7 @@ class _TaskScreenState extends State<TaskScreen>
                 c['phone']?.toString() ?? '',
                 (c['id'] as num?)?.toInt(),
                 (c['added_by'] as num?)?.toInt(),
+                c['area']?.toString() ?? '',
               ))
           .toList();
 
@@ -257,20 +296,21 @@ class _TaskScreenState extends State<TaskScreen>
       for (final cb in combosJson) {
         final dName = cb['doctor_name']?.toString().trim() ?? '';
         final cName = cb['clinic_name']?.toString().trim() ?? '';
+        final areaName = cb['area']?.toString().trim() ?? '';
         if (dName.isEmpty || cName.isEmpty) continue;
 
         _Doctor? matchedDoc;
         for (final d in loadedDoctors) {
-          if (d.name.toLowerCase() == dName.toLowerCase()) {
+          if (d.name.toLowerCase() == dName.toLowerCase() && (areaName.isEmpty || d.area.toLowerCase() == areaName.toLowerCase())) {
             matchedDoc = d;
             break;
           }
         }
-        matchedDoc ??= _Doctor(dName, 'General Physician');
+        matchedDoc ??= _Doctor(dName, 'General Physician', '', null, null, areaName);
 
         _Clinic? matchedClin;
         for (final c in loadedClinics) {
-          if (c.name.toLowerCase() == cName.toLowerCase()) {
+          if (c.name.toLowerCase() == cName.toLowerCase() && (areaName.isEmpty || c.area.toLowerCase() == areaName.toLowerCase())) {
             matchedClin = c;
             break;
           }
@@ -280,6 +320,10 @@ class _TaskScreenState extends State<TaskScreen>
           (cb['clinic_lat'] as num?)?.toDouble() ?? 0.0,
           (cb['clinic_lng'] as num?)?.toDouble() ?? 0.0,
           cb['clinic_address']?.toString() ?? '',
+          '',
+          null,
+          null,
+          areaName,
         );
 
         final suggestion = _DoctorClinicSuggestion(doctor: matchedDoc, clinic: matchedClin);
@@ -288,8 +332,24 @@ class _TaskScreenState extends State<TaskScreen>
         }
       }
 
+      final Set<String> loadedAreas = {'All Areas', 'Chennai', 'Villupuram', 'Cuddalore', 'Tindivanam'};
+      for (final a in areasJson) {
+        final str = a?.toString().trim() ?? '';
+        if (str.isNotEmpty) loadedAreas.add(str);
+      }
+      for (final d in loadedDoctors) {
+        if (d.area.trim().isNotEmpty) loadedAreas.add(d.area.trim());
+      }
+      for (final c in loadedClinics) {
+        if (c.area.trim().isNotEmpty) loadedAreas.add(c.area.trim());
+      }
+      for (final cb in loadedCombos) {
+        if (cb.area.trim().isNotEmpty) loadedAreas.add(cb.area.trim());
+      }
+
       if (mounted) {
         setState(() {
+          _areas = loadedAreas.toList();
           _doctors = loadedDoctors;
           _clinics = loadedClinics;
           _combinations = loadedCombos;
@@ -321,24 +381,31 @@ class _TaskScreenState extends State<TaskScreen>
 
     final docName = ext['doctor_name'] as String? ?? '';
     final clinName = ext['clinic_name'] as String? ?? '';
+    final areaName = ext['area'] as String? ?? '';
     final category = ext['task_category'] as String? ?? '';
+    if (areaName.isNotEmpty) {
+      _selectedArea = areaName;
+      if (!_areas.contains(areaName)) _areas.add(areaName);
+    }
 
     _Doctor? doc;
     if (docName.isNotEmpty) {
       for (final d in _doctors) {
-        if (d.name.toLowerCase() == docName.toLowerCase()) {
+        if (d.name.toLowerCase() == docName.toLowerCase() &&
+            (areaName.isEmpty || d.area.toLowerCase() == areaName.toLowerCase())) {
           doc = d;
           break;
         }
       }
-      doc ??= _Doctor(docName, 'General Physician');
+      doc ??= _Doctor(docName, 'General Physician', '', null, null, areaName);
       if (!_doctors.contains(doc)) _doctors.add(doc);
     }
 
     _Clinic? clin;
     if (clinName.isNotEmpty) {
       for (final c in _clinics) {
-        if (c.name.toLowerCase() == clinName.toLowerCase()) {
+        if (c.name.toLowerCase() == clinName.toLowerCase() &&
+            (areaName.isEmpty || c.area.toLowerCase() == areaName.toLowerCase())) {
           clin = c;
           break;
         }
@@ -347,7 +414,7 @@ class _TaskScreenState extends State<TaskScreen>
         final lat = (ext['clinic_lat'] as num?)?.toDouble() ?? 0.0;
         final lng = (ext['clinic_lng'] as num?)?.toDouble() ?? 0.0;
         final addr = ext['clinic_address'] as String? ?? '';
-        clin = _Clinic(clinName, lat, lng, addr);
+        clin = _Clinic(clinName, lat, lng, addr, '', null, null, areaName);
         _clinics.add(clin);
       }
     }
@@ -387,12 +454,18 @@ class _TaskScreenState extends State<TaskScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _PickerSheet<_Doctor>(
-        hint: 'Select or Search Doctor',
-        items: _doctors,
-        combinations: _combinations,
+        hint: _selectedArea != 'All Areas' ? 'Select Doctor in $_selectedArea' : 'Select or Search Doctor',
+        items: _filteredDoctors,
+        combinations: _filteredCombinations,
         selected: visit.doctor,
         label: (d) => d.name,
-        subtitle: (d) => d.speciality + (d.phone.isNotEmpty ? ' • ${d.phone}' : ''),
+        subtitle: (d) {
+          final parts = <String>[];
+          if (d.area.isNotEmpty) parts.add('AREA: ${d.area.toUpperCase()}');
+          if (d.speciality.isNotEmpty) parts.add(d.speciality);
+          if (d.phone.isNotEmpty) parts.add(d.phone);
+          return parts.join(' • ');
+        },
         isDoctorPicker: true,
       ),
     );
@@ -416,14 +489,21 @@ class _TaskScreenState extends State<TaskScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _PickerSheet<_Clinic>(
-        hint: 'Select or Search Clinic / Hospital',
-        items: _clinics,
-        combinations: _combinations,
+        hint: _selectedArea != 'All Areas' ? 'Select Clinic in $_selectedArea' : 'Select or Search Clinic / Hospital',
+        items: _filteredClinics,
+        combinations: _filteredCombinations,
         selected: visit.clinic,
         label: (c) => c.name,
-        subtitle: (c) => c.address.isNotEmpty
-            ? c.address
-            : (c.lat != 0 ? 'Lat: ${c.lat.toStringAsFixed(4)}, Lng: ${c.lng.toStringAsFixed(4)}' : ''),
+        subtitle: (c) {
+          final parts = <String>[];
+          if (c.area.isNotEmpty) parts.add('AREA: ${c.area.toUpperCase()}');
+          if (c.address.isNotEmpty) {
+            parts.add(c.address);
+          } else if (c.lat != 0) {
+            parts.add('Lat: ${c.lat.toStringAsFixed(4)}, Lng: ${c.lng.toStringAsFixed(4)}');
+          }
+          return parts.join(' • ');
+        },
         isDoctorPicker: false,
       ),
     );
@@ -465,6 +545,7 @@ class _TaskScreenState extends State<TaskScreen>
     final nameCtrl = TextEditingController();
     final specCtrl = TextEditingController(text: 'General Physician');
     final phoneCtrl = TextEditingController();
+    final areaCtrl = TextEditingController(text: _selectedArea != 'All Areas' ? _selectedArea : '');
     final formKey = GlobalKey<FormState>();
     bool saving = false;
 
@@ -489,6 +570,8 @@ class _TaskScreenState extends State<TaskScreen>
                 const SizedBox(height: 12),
                 _dialogField(phoneCtrl, 'Phone Number', Icons.phone_rounded,
                     type: TextInputType.phone),
+                const SizedBox(height: 12),
+                _dialogField(areaCtrl, 'Area / Division (e.g. Chennai)', Icons.location_city_rounded),
               ]),
             ),
           ),
@@ -503,28 +586,38 @@ class _TaskScreenState extends State<TaskScreen>
                 if (!formKey.currentState!.validate()) return;
                 setS(() => saving = true);
                 try {
+                  final enteredArea = areaCtrl.text.trim();
                   final res = await _postRequest(
                     '/backend/add_doctor.php',
                     jsonEncode({
                       'name': nameCtrl.text.trim(),
                       'speciality': specCtrl.text.trim(),
                       'phone': phoneCtrl.text.trim(),
+                      'area': enteredArea,
                       'added_by': widget.salesRep.id,
                     }),
                   );
                   final data = json.decode(res.body);
                   if (data['success'] == true) {
                     final d = _Doctor(
-                      data['doctor']['name'] ?? nameCtrl.text.trim(),
-                      data['doctor']['speciality'] ?? specCtrl.text.trim(),
-                      data['doctor']['phone'] ?? phoneCtrl.text.trim(),
-                      (data['doctor']['id'] as num?)?.toInt(),
+                      data['doctor']?['name'] ?? nameCtrl.text.trim(),
+                      data['doctor']?['speciality'] ?? specCtrl.text.trim(),
+                      data['doctor']?['phone'] ?? phoneCtrl.text.trim(),
+                      (data['doctor']?['id'] as num?)?.toInt(),
                       widget.salesRep.id,
+                      data['doctor']?['area'] ?? enteredArea,
                     );
-                    if (mounted) setState(() { _doctors.add(d); });
+                    if (mounted) {
+                      setState(() {
+                        _doctors.add(d);
+                        if (enteredArea.isNotEmpty && !_areas.contains(enteredArea)) {
+                          _areas.add(enteredArea);
+                        }
+                      });
+                    }
                     // Close dialog FIRST, then show snack using screen context
                     if (ctx.mounted) Navigator.pop(ctx);
-                    if (mounted) _snack('Doctor "${d.name}" added!');
+                    if (mounted) _snack('Doctor "${d.name}" added in area "${d.area.isNotEmpty ? d.area : 'General'}"!');
                   } else {
                     setS(() => saving = false);
                     if (mounted) _snack(data['message'] ?? 'Failed to add doctor.');
@@ -542,7 +635,7 @@ class _TaskScreenState extends State<TaskScreen>
         ),
       ),
     );
-    nameCtrl.dispose(); specCtrl.dispose(); phoneCtrl.dispose();
+    nameCtrl.dispose(); specCtrl.dispose(); phoneCtrl.dispose(); areaCtrl.dispose();
   }
 
   // ── Add New Clinic dialog ─────────────────────────────────────────────────
@@ -551,6 +644,7 @@ class _TaskScreenState extends State<TaskScreen>
     final nameCtrl    = TextEditingController();
     final addrCtrl    = TextEditingController();
     final phoneCtrl   = TextEditingController();
+    final areaCtrl    = TextEditingController(text: _selectedArea != 'All Areas' ? _selectedArea : '');
     final mapUrlCtrl  = TextEditingController();
     final latCtrl     = TextEditingController();
     final lngCtrl     = TextEditingController();
@@ -575,6 +669,8 @@ class _TaskScreenState extends State<TaskScreen>
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 _dialogField(nameCtrl, 'Clinic / Hospital Name *', Icons.local_hospital_rounded,
                     validator: (v) => (v == null || v.isEmpty) ? 'Required' : null),
+                const SizedBox(height: 10),
+                _dialogField(areaCtrl, 'Area / Division (e.g. Chennai)', Icons.location_city_rounded),
                 const SizedBox(height: 10),
                 _dialogField(addrCtrl, 'Address', Icons.home_rounded),
                 const SizedBox(height: 10),
@@ -718,6 +814,7 @@ class _TaskScreenState extends State<TaskScreen>
                 }
                 setS(() => saving = true);
                 try {
+                  final enteredArea = areaCtrl.text.trim();
                   final res = await _postRequest(
                     '/backend/add_clinic.php',
                     jsonEncode({
@@ -725,6 +822,7 @@ class _TaskScreenState extends State<TaskScreen>
                       'address': addrCtrl.text.trim(),
                       'phone': phoneCtrl.text.trim(),
                       'map_url': mapUrlCtrl.text.trim(),
+                      'area': enteredArea,
                       'lat': lat,
                       'lng': lng,
                       'added_by': widget.salesRep.id,
@@ -741,11 +839,19 @@ class _TaskScreenState extends State<TaskScreen>
                       dClinic['phone'] ?? phoneCtrl.text.trim(),
                       (dClinic['id'] as num?)?.toInt(),
                       widget.salesRep.id,
+                      dClinic['area'] ?? enteredArea,
                     );
-                    if (mounted) setState(() { _clinics.add(c); });
+                    if (mounted) {
+                      setState(() {
+                        _clinics.add(c);
+                        if (enteredArea.isNotEmpty && !_areas.contains(enteredArea)) {
+                          _areas.add(enteredArea);
+                        }
+                      });
+                    }
                     // Close dialog FIRST, then show snack using screen context
                     if (ctx.mounted) Navigator.pop(ctx);
-                    if (mounted) _snack('Clinic "${c.name}" added!');
+                    if (mounted) _snack('Clinic "${c.name}" added in area "${c.area.isNotEmpty ? c.area : 'General'}"!');
                   } else {
                     setS(() => saving = false);
                     if (mounted) _snack(data['message'] ?? 'Failed to add clinic.');
@@ -763,8 +869,99 @@ class _TaskScreenState extends State<TaskScreen>
         ),
       ),
     );
-    nameCtrl.dispose(); addrCtrl.dispose(); phoneCtrl.dispose();
+    nameCtrl.dispose(); addrCtrl.dispose(); phoneCtrl.dispose(); areaCtrl.dispose();
     mapUrlCtrl.dispose(); latCtrl.dispose(); lngCtrl.dispose();
+  }
+
+  // ── Add New Area / Division dialog ────────────────────────────────────────
+
+  Future<void> _showAddAreaDialog() async {
+    final areaCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool saving = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(children: [
+            Icon(Icons.add_location_alt_rounded, color: Color(0xFF00A86B)),
+            SizedBox(width: 10),
+            Text('Add New Area', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          ]),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _dialogField(
+                  areaCtrl,
+                  'Area / Division Name * (e.g. Coimbatore)',
+                  Icons.location_city_rounded,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Area name is required';
+                    if (v.trim().toLowerCase() == 'all areas') return 'Cannot use reserved name "All Areas"';
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00A86B),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      final enteredArea = areaCtrl.text.trim();
+                      setS(() => saving = true);
+                      try {
+                        final res = await _postRequest(
+                          '/backend/add_area.php',
+                          jsonEncode({
+                            'name': enteredArea,
+                            'added_by': widget.salesRep.id,
+                          }),
+                        );
+                        final data = json.decode(res.body);
+                        if (data['success'] == true) {
+                          if (mounted) {
+                            setState(() {
+                              if (!_areas.any((a) => a.toLowerCase() == enteredArea.toLowerCase())) {
+                                _areas.add(enteredArea);
+                              }
+                              _selectedArea = enteredArea;
+                            });
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) _snack('Area "$enteredArea" added successfully!');
+                        } else {
+                          setS(() => saving = false);
+                          if (mounted) _snack(data['message'] ?? 'Failed to add area.');
+                        }
+                      } catch (_) {
+                        setS(() => saving = false);
+                        if (mounted) _snack('Could not connect to server.');
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Save', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+    areaCtrl.dispose();
   }
 
   // ── Reusable dialog field ─────────────────────────────────────────────────
@@ -842,6 +1039,7 @@ class _TaskScreenState extends State<TaskScreen>
       final v = filledVisits[i];
       final dayLabel = dayLabels[i];
       final taskIdForVisit = (i == 0) ? existingTaskId : null;
+      final taskArea = v.clinic!.area.isNotEmpty ? v.clinic!.area : v.doctor!.area;
       await _saveTaskToDB(
         taskId: taskIdForVisit,
         taskBasis: dayLabel,
@@ -850,11 +1048,13 @@ class _TaskScreenState extends State<TaskScreen>
         category: v.taskCategory ?? '',
         notes: _notesCtrl.text.trim(),
         deadlineDateTime: formattedDeadline,
+        area: taskArea,
       );
       assignedTasks.add({
         if (taskIdForVisit != null) 'taskId': taskIdForVisit,
         'doctorName': v.doctor!.name,
         'clinicName': v.clinic!.name,
+        'area': taskArea,
         'clinicLat': v.clinic!.lat,
         'clinicLng': v.clinic!.lng,
         'clinicAddress': v.clinic!.address,
@@ -873,6 +1073,7 @@ class _TaskScreenState extends State<TaskScreen>
       'repLat': _repLat, 'repLng': _repLng,
       'doctorName': firstVisit.doctor!.name,
       'clinicName': firstVisit.clinic!.name,
+      'area': firstVisit.clinic!.area.isNotEmpty ? firstVisit.clinic!.area : firstVisit.doctor!.area,
       'taskCategory': firstVisit.taskCategory,
       'clinicLat': firstVisit.clinic!.lat, 'clinicLng': firstVisit.clinic!.lng,
       'clinicAddress': firstVisit.clinic!.address,
@@ -890,8 +1091,12 @@ class _TaskScreenState extends State<TaskScreen>
     required String category,
     required String notes,
     String? deadlineDateTime,
+    String? area,
   }) async {
     try {
+      final taskArea = (area != null && area.isNotEmpty)
+          ? area
+          : (clinic.area.isNotEmpty ? clinic.area : '');
       final Map<String, dynamic> body = {
         'user_id': widget.salesRep.id,
         'sales_rep_name': widget.salesRep.name,
@@ -899,6 +1104,7 @@ class _TaskScreenState extends State<TaskScreen>
         'doctor_name': doctorName,
         'clinic_name': clinic.name,
         'task_category': category,
+        'area': taskArea,
         'source_lat': _repLat ?? 0.0,
         'source_lng': _repLng ?? 0.0,
         'clinic_lat': clinic.lat,
@@ -923,6 +1129,136 @@ class _TaskScreenState extends State<TaskScreen>
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
+  }
+
+  // ── Show All Areas / Divisions Management Modal ────────────────────────────
+
+  Future<void> _showShowAllAreasModal() async {
+    final manageableAreas = _areas.where((a) => a != 'All Areas').toList();
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) => _AreaManagementModal(
+        areas: manageableAreas,
+        doctors: _doctors,
+        clinics: _clinics,
+        salesRep: widget.salesRep,
+        onAddNewArea: _showAddAreaDialog,
+        onDeleteSelected: (selectedAreas) async {
+          await _executeDeleteAreas(selectedAreas);
+        },
+      ),
+    );
+  }
+
+  Future<void> _executeDeleteAreas(List<String> areasToDelete) async {
+    if (areasToDelete.isEmpty) {
+      _snack('No areas selected for deletion.');
+      return;
+    }
+
+    try {
+      final res = await _postRequest(
+        '/backend/delete_doctor_clinic.php',
+        jsonEncode({
+          'user_id': widget.salesRep.id,
+          'role': widget.salesRep.role,
+          'area_names': areasToDelete,
+        }),
+      );
+
+      final data = json.decode(res.body);
+      if (data['success'] == true) {
+        if (mounted) {
+          setState(() {
+            _areas.removeWhere((a) => areasToDelete.contains(a));
+            if (areasToDelete.contains(_selectedArea)) {
+              _selectedArea = 'All Areas';
+            }
+            _doctors = _doctors.map((d) => areasToDelete.contains(d.area)
+                ? _Doctor(d.name, d.speciality, d.phone, d.id, d.addedBy, '')
+                : d).toList();
+            _clinics = _clinics.map((c) => areasToDelete.contains(c.area)
+                ? _Clinic(c.name, c.lat, c.lng, c.address, c.phone, c.id, c.addedBy, '')
+                : c).toList();
+            _combinations = _combinations.map((cb) => areasToDelete.contains(cb.area)
+                ? _DoctorClinicSuggestion(
+                    doctor: areasToDelete.contains(cb.doctor.area)
+                        ? _Doctor(cb.doctor.name, cb.doctor.speciality, cb.doctor.phone, cb.doctor.id, cb.doctor.addedBy, '')
+                        : cb.doctor,
+                    clinic: areasToDelete.contains(cb.clinic.area)
+                        ? _Clinic(cb.clinic.name, cb.clinic.lat, cb.clinic.lng, cb.clinic.address, cb.clinic.phone, cb.clinic.id, cb.clinic.addedBy, '')
+                        : cb.clinic,
+                  )
+                : cb).toList();
+          });
+
+          final totalCount = areasToDelete.length;
+          _showUndoAreaSnackBar(
+            message: '$totalCount area${totalCount == 1 ? '' : 's'} deleted.',
+            deletedAreas: areasToDelete,
+          );
+        }
+      } else {
+        if (mounted) _snack(data['message'] ?? 'Failed to delete areas.');
+      }
+    } catch (e) {
+      debugPrint('Delete areas error: $e');
+      if (mounted) _snack('Could not delete areas. Please check connection.');
+    }
+  }
+
+  void _showUndoAreaSnackBar({
+    required String message,
+    required List<String> deletedAreas,
+  }) {
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontWeight: FontWeight.w600)),
+        backgroundColor: const Color(0xFF1E293B),
+        duration: const Duration(seconds: 7),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        action: SnackBarAction(
+          label: 'UNDO',
+          textColor: const Color(0xFF34D399),
+          onPressed: () => _restoreDeletedAreas(deletedAreas),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _restoreDeletedAreas(List<String> areasToRestore) async {
+    try {
+      final res = await _postRequest(
+        '/backend/restore_doctor_clinic.php',
+        jsonEncode({
+          'user_id': widget.salesRep.id,
+          'role': widget.salesRep.role,
+          'area_names': areasToRestore,
+        }),
+      );
+
+      final data = json.decode(res.body);
+      if (data['success'] == true) {
+        if (mounted) {
+          setState(() {
+            for (final a in areasToRestore) {
+              if (!_areas.contains(a)) {
+                _areas.add(a);
+              }
+            }
+          });
+          _snack('Areas restored successfully!');
+        }
+      } else {
+        if (mounted) _snack(data['message'] ?? 'Failed to restore areas.');
+      }
+    } catch (_) {
+      if (mounted) _snack('Could not restore areas. Connection error.');
+    }
   }
 
   // ── Show All Doctors / Clinics Management Modal ────────────────────────────
@@ -1384,6 +1720,77 @@ class _TaskScreenState extends State<TaskScreen>
 
   Widget _buildAssignmentsSection() {
     return Column(children: [
+      // ── Area / Division Filter & Show All Controls ──
+      Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFD1FAE5)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1FAE5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.location_city_rounded, size: 16, color: Color(0xFF065F46)),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Area / Division Filter',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1B4332)),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _showShowAllAreasModal,
+                  icon: const Icon(Icons.manage_accounts_rounded, size: 15, color: Color(0xFF00A86B)),
+                  label: const Text('SHOW ALL', style: TextStyle(color: Color(0xFF00A86B), fontWeight: FontWeight.w800, fontSize: 11)),
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFFF0FDF4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Color(0xFFD1FAE5))),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: _styledDropdown<String>(
+                    hint: 'Select Area / Division',
+                    value: _selectedArea,
+                    items: _areas,
+                    label: (a) => a == 'All Areas' ? 'All Areas (Show All Records)' : 'Area: $a',
+                    onChanged: (a) {
+                      if (a != null) {
+                        setState(() => _selectedArea = a);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _addBtn(onTap: _showAddAreaDialog, tooltip: 'Add new area / division'),
+              ],
+            ),
+          ],
+        ),
+      ),
       for (int i = 0; i < _dayPlans.length; i++) ...[
         _buildSection(
           icon: Icons.assignment_ind_rounded,
@@ -1428,8 +1835,8 @@ class _TaskScreenState extends State<TaskScreen>
                 Expanded(
                   child: _DoctorAutocompleteField(
                     selectedDoctor: _dayPlans[i].visits[vIndex].doctor,
-                    doctors: _doctors,
-                    combinations: _combinations,
+                    doctors: _filteredDoctors,
+                    combinations: _filteredCombinations,
                     onDoctorSelected: (d) => setState(() => _dayPlans[i].visits[vIndex].doctor = d),
                     onSuggestionSelected: (s) => setState(() {
                       _dayPlans[i].visits[vIndex].doctor = s.doctor;
@@ -1448,8 +1855,8 @@ class _TaskScreenState extends State<TaskScreen>
                 Expanded(
                   child: _ClinicAutocompleteField(
                     selectedClinic: _dayPlans[i].visits[vIndex].clinic,
-                    clinics: _clinics,
-                    combinations: _combinations,
+                    clinics: _filteredClinics,
+                    combinations: _filteredCombinations,
                     onClinicSelected: (c) => setState(() => _dayPlans[i].visits[vIndex].clinic = c),
                     onSuggestionSelected: (s) => setState(() {
                       _dayPlans[i].visits[vIndex].doctor = s.doctor;
@@ -1577,7 +1984,26 @@ class _TaskScreenState extends State<TaskScreen>
             child: const Icon(Icons.location_on_rounded, size: 16, color: Color(0xFF065F46))),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Clinic Location', style: TextStyle(fontSize: 11, color: Color(0xFF52796F), fontWeight: FontWeight.w500)),
+          Row(
+            children: [
+              const Text('Clinic Location', style: TextStyle(fontSize: 11, color: Color(0xFF52796F), fontWeight: FontWeight.w500)),
+              if (clinic.area.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Text(
+                    'AREA: ${clinic.area.toUpperCase()}',
+                    style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                  ),
+                ),
+              ],
+            ],
+          ),
           const SizedBox(height: 2),
           Text('Lat: ${clinic.lat.toStringAsFixed(6)}  |  Lng: ${clinic.lng.toStringAsFixed(6)}',
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1B4332))),
@@ -1944,7 +2370,11 @@ class _DoctorAutocompleteFieldState extends State<_DoctorAutocompleteField> {
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
                       ),
                       subtitle: Text(
-                        option.speciality + (option.phone.isNotEmpty ? ' • ${option.phone}' : ''),
+                        [
+                          if (option.area.isNotEmpty) 'AREA: ${option.area.toUpperCase()}',
+                          if (option.speciality.isNotEmpty) option.speciality,
+                          if (option.phone.isNotEmpty) option.phone,
+                        ].join(' • '),
                         style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
                       ),
                       onTap: () => onSelected(option),
@@ -2180,7 +2610,10 @@ class _ClinicAutocompleteFieldState extends State<_ClinicAutocompleteField> {
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
                       ),
                       subtitle: Text(
-                        option.address.isNotEmpty ? option.address : 'Lat: ${option.lat.toStringAsFixed(4)}, Lng: ${option.lng.toStringAsFixed(4)}',
+                        [
+                          if (option.area.isNotEmpty) 'AREA: ${option.area.toUpperCase()}',
+                          if (option.address.isNotEmpty) option.address else 'Lat: ${option.lat.toStringAsFixed(4)}, Lng: ${option.lng.toStringAsFixed(4)}',
+                        ].join(' • '),
                         style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
                       ),
                       onTap: () => onSelected(option),
@@ -2431,10 +2864,10 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
                             return InkWell(
                               onTap: () => Navigator.pop(ctx, item),
                               child: Container(
-                                color: isSelected ? const Color(0xFFD1FAE5) : Colors.transparent,
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                decoration: const BoxDecoration(
-                                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? const Color(0xFFD1FAE5) : Colors.transparent,
+                                  border: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
                                 ),
                                 child: Row(
                                   children: [
@@ -2491,6 +2924,396 @@ class _BlobPainter extends CustomPainter {
   }
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+// ─── Show All Areas / Divisions Management Modal ──────────────────────────────
+
+class _AreaManagementModal extends StatefulWidget {
+  final List<String> areas;
+  final List<_Doctor> doctors;
+  final List<_Clinic> clinics;
+  final User salesRep;
+  final Future<void> Function(List<String> selectedAreas) onDeleteSelected;
+  final VoidCallback? onAddNewArea;
+
+  const _AreaManagementModal({
+    required this.areas,
+    required this.doctors,
+    required this.clinics,
+    required this.salesRep,
+    required this.onDeleteSelected,
+    this.onAddNewArea,
+  });
+
+  @override
+  State<_AreaManagementModal> createState() => _AreaManagementModalState();
+}
+
+class _AreaManagementModalState extends State<_AreaManagementModal> {
+  String _search = '';
+  final Set<String> _selectedAreas = {};
+  bool _isProcessing = false;
+
+  int _doctorCountForArea(String area) {
+    return widget.doctors.where((d) => d.area.trim().toLowerCase() == area.trim().toLowerCase()).length;
+  }
+
+  int _clinicCountForArea(String area) {
+    return widget.clinics.where((c) => c.area.trim().toLowerCase() == area.trim().toLowerCase()).length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _search.trim().toLowerCase();
+    final filteredAreas = widget.areas.where((a) {
+      if (q.isEmpty) return true;
+      return a.toLowerCase().contains(q);
+    }).toList();
+
+    final totalSelected = _selectedAreas.length;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (ctx, scrollCtrl) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            // ── Drag handle ──
+            const SizedBox(height: 10),
+            Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Modal Header ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1FAE5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.location_city_rounded, size: 20, color: Color(0xFF065F46)),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Show All Areas / Divisions',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1B4332)),
+                        ),
+                        Text(
+                          'Select and delete obsolete or unused areas',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF52796F)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.onAddNewArea != null)
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline_rounded, size: 22, color: Color(0xFF00A86B)),
+                      tooltip: 'Add New Area',
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        widget.onAddNewArea!();
+                      },
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 22, color: Color(0xFF64748B)),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Search bar ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+              child: TextField(
+                autofocus: false,
+                onChanged: (v) => setState(() => _search = v),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF1B4332)),
+                decoration: InputDecoration(
+                  hintText: 'Search areas by name (e.g. Chennai, Villupuram)...',
+                  hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                  prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00A86B), size: 20),
+                  filled: true,
+                  fillColor: const Color(0xFFF0FDF4),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFD1FAE5)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFD1FAE5)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF00A86B), width: 1.5),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Selection toolbar ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '$totalSelected selected',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: totalSelected > 0 ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedAreas.addAll(filteredAreas);
+                          });
+                        },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Select All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00A86B))),
+                      ),
+                      const SizedBox(width: 12),
+                      TextButton(
+                        onPressed: totalSelected == 0
+                            ? null
+                            : () {
+                                setState(() {
+                                  _selectedAreas.clear();
+                                });
+                              },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Clear',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: totalSelected > 0 ? Colors.redAccent : Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // ── List of Areas ──
+            Expanded(
+              child: filteredAreas.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(
+                        child: Text(
+                          'No areas found matching your search',
+                          style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: scrollCtrl,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      itemCount: filteredAreas.length,
+                      itemBuilder: (context, index) {
+                        final area = filteredAreas[index];
+                        final isSelected = _selectedAreas.contains(area);
+                        final docCount = _doctorCountForArea(area);
+                        final clinCount = _clinicCountForArea(area);
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isSelected ? const Color(0xFFFEF2F2) : Colors.transparent,
+                            border: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                value: isSelected,
+                                onChanged: (val) {
+                                  setState(() {
+                                    if (val == true) {
+                                      _selectedAreas.add(area);
+                                    } else {
+                                      _selectedAreas.remove(area);
+                                    }
+                                  });
+                                },
+                                activeColor: const Color(0xFFDC2626),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF2563EB)),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      area,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      (docCount == 0 && clinCount == 0)
+                                          ? 'No doctors or clinics registered'
+                                          : [
+                                              if (docCount > 0) '$docCount Doctor${docCount == 1 ? '' : 's'}',
+                                              if (clinCount > 0) '$clinCount Clinic${clinCount == 1 ? '' : 's'}',
+                                            ].join('  •  '),
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+
+            // ── Sticky Bottom Delete Bar ──
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: (totalSelected == 0 || _isProcessing)
+                        ? null
+                        : () => _confirmAndDeleteAreas(ctx),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: const Color(0xFF94A3B8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: totalSelected > 0 ? 3 : 0,
+                    ),
+                    icon: _isProcessing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.delete_forever_rounded, size: 20),
+                    label: Text(
+                      totalSelected == 0
+                          ? 'Select areas to delete'
+                          : 'DELETE SELECTED ($totalSelected)',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmAndDeleteAreas(BuildContext modalContext) async {
+    final totalSelected = _selectedAreas.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 24),
+            const SizedBox(width: 8),
+            Text('Delete $totalSelected Area${totalSelected == 1 ? '' : 's'}?'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete the selected $totalSelected area(s)?\n\n'
+          'They will be removed from the Area dropdown and selection filters. Historical tasks and completed reports will remain intact.',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final selectedList = _selectedAreas.toList();
+      if (modalContext.mounted) {
+        Navigator.pop(modalContext);
+      }
+      await widget.onDeleteSelected(selectedList);
+    }
+  }
 }
 
 // ─── Show All Doctors / Clinics Management Modal ──────────────────────────────
@@ -2904,7 +3727,11 @@ class _DoctorClinicManagementModalState extends State<_DoctorClinicManagementMod
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    doc.speciality + (doc.phone.isNotEmpty ? '  •  ${doc.phone}' : ''),
+                    [
+                      if (doc.area.isNotEmpty) 'AREA: ${doc.area.toUpperCase()}',
+                      if (doc.speciality.isNotEmpty) doc.speciality,
+                      if (doc.phone.isNotEmpty) doc.phone,
+                    ].join('  •  '),
                     style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                   ),
                 ],
@@ -2975,7 +3802,10 @@ class _DoctorClinicManagementModalState extends State<_DoctorClinicManagementMod
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    clin.address.isNotEmpty ? clin.address : 'Lat: ${clin.lat.toStringAsFixed(4)}, Lng: ${clin.lng.toStringAsFixed(4)}',
+                    [
+                      if (clin.area.isNotEmpty) 'AREA: ${clin.area.toUpperCase()}',
+                      if (clin.address.isNotEmpty) clin.address else 'Lat: ${clin.lat.toStringAsFixed(4)}, Lng: ${clin.lng.toStringAsFixed(4)}',
+                    ].join('  •  '),
                     style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

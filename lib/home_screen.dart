@@ -37,6 +37,7 @@ class MappedTask {
   final String clinicAddress;
   final String taskCategory;
   final String taskBasis;
+  final String area;
   final LatLng destinationLatLng;
   final String notes;
   String status;
@@ -53,6 +54,7 @@ class MappedTask {
     required this.clinicAddress,
     required this.taskCategory,
     required this.taskBasis,
+    this.area = '',
     required this.destinationLatLng,
     this.notes = '',
     this.status = 'pending',
@@ -642,6 +644,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             clinicAddress: (t['clinic_address'] ?? '').toString(),
             taskCategory: (t['task_category'] ?? '').toString(),
             taskBasis: (t['task_basis'] ?? 'Daily').toString(),
+            area: (t['area'] ?? '').toString(),
             notes: (t['notes'] ?? '').toString(),
             status: (t['status'] ?? 'pending').toString(),
             destinationLatLng: LatLng(lat, lng),
@@ -1729,6 +1732,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             const SizedBox(height: 6),
             _pendingInfoRow(
                 Icons.business_rounded, task['clinic_name'] ?? ''),
+            if ((task['area'] ?? '').toString().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              _pendingInfoRow(
+                  Icons.location_city_rounded, 'AREA: ${(task['area'] ?? '').toString().toUpperCase()}'),
+            ],
             const SizedBox(height: 6),
             _pendingInfoRow(
                 Icons.calendar_today_rounded, task['task_basis'] ?? ''),
@@ -1757,6 +1765,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   clinicAddress: task['clinic_address'] ?? '',
                   taskCategory: task['task_category'] ?? '',
                   taskBasis: task['task_basis'] ?? 'Daily',
+                  area: (task['area'] ?? '').toString(),
                   notes: task['notes'] ?? '',
                   status: task['status'] ?? 'pending',
                   destinationLatLng: LatLng(lat, lng),
@@ -2442,6 +2451,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               clinicAddress: item['clinicAddress'] ?? '',
               taskCategory: item['taskCategory'] ?? '',
               taskBasis: item['taskBasis'] ?? 'Daily',
+              area: (item['area'] ?? '').toString(),
               notes: item['notes'] ?? '',
               destinationLatLng: LatLng(lat, lng),
             ));
@@ -2458,6 +2468,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             clinicAddress: result['clinicAddress'] as String? ?? '',
             taskCategory: result['taskCategory'] as String? ?? '',
             taskBasis: result['taskBasis'] as String? ?? 'Daily',
+            area: (result['area'] ?? '').toString(),
             notes: result['notes'] as String? ?? '',
             destinationLatLng: LatLng(clinicLat, clinicLng),
           ));
@@ -3465,7 +3476,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                     Text(
                       isSelectedMode
-                          ? 'Dr. ${_selectedMappedTask!.doctorName}${_selectedMappedTask!.taskCategory.isNotEmpty ? ' • ${_selectedMappedTask!.taskCategory}' : ''}'
+                          ? 'Dr. ${_selectedMappedTask!.doctorName}${_selectedMappedTask!.taskCategory.isNotEmpty ? ' • ${_selectedMappedTask!.taskCategory}' : ''}${_selectedMappedTask!.area.isNotEmpty ? ' • AREA: ${_selectedMappedTask!.area.toUpperCase()}' : ''}'
                           : 'Source → Destinations (Sorted Nearest to Farthest)',
                       style: const TextStyle(fontSize: 10, color: Color(0xFF52796F), fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
@@ -4681,6 +4692,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             final lateBy = (task['late_by'] ?? '').toString().trim();
                             final doctor = task['doctor_name'] ?? 'N/A';
                             final clinic = task['clinic_name'] ?? 'N/A';
+                            final area = (task['area'] ?? '').toString().trim();
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 10),
@@ -4697,6 +4709,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  if (area.isNotEmpty) ...[
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                      margin: const EdgeInsets.only(bottom: 5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(5),
+                                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                                      ),
+                                      child: Text(
+                                        'AREA: ${area.toUpperCase()}',
+                                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                                      ),
+                                    ),
+                                  ],
                                   Row(
                                     children: [
                                       Expanded(
@@ -4971,6 +4998,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final clinic = task['clinic_name'] ?? 'N/A';
     final basis  = task['task_basis']  ?? 'Daily';
     final category = task['task_category'] ?? '';
+    final area   = (task['area'] ?? '').toString().trim();
     final address  = task['clinic_address'] ?? '';
     final taskId   = (task['id'] as num?)?.toInt() ?? 0;
     final lat      = (task['clinic_lat'] as num?)?.toDouble();
@@ -5132,6 +5160,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ],
           ),
           const SizedBox(height: 12),
+          if (area.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Text(
+                'AREA: ${area.toUpperCase()}',
+                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+              ),
+            ),
+          ],
           Row(
             children: [
               const Icon(Icons.person_rounded, size: 16, color: _emeraldPrimary),
@@ -5316,6 +5359,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final clinic = task['clinic_name'] ?? 'N/A';
     final basis  = task['task_basis']  ?? 'Daily';
     final category = task['task_category'] ?? '';
+    final area   = (task['area'] ?? '').toString().trim();
     final address  = task['clinic_address'] ?? '';
     final checkoutDate = (task['checkout_date'] ?? '').toString().trim();
     final createdAt = (task['created_at'] ?? '').toString().trim();
@@ -5366,6 +5410,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (area.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        margin: const EdgeInsets.only(bottom: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Text(
+                          'AREA: ${area.toUpperCase()}',
+                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                        ),
+                      ),
+                    ],
                     Text('Dr. $doctor • $clinic', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _darkText)),
                     const SizedBox(height: 2),
                     Text('$basis Task ${category.toString().isNotEmpty ? '• $category' : ''}', style: const TextStyle(fontSize: 11, color: _emeraldDark, fontWeight: FontWeight.w600)),
@@ -6164,6 +6223,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         : 'Sales Rep #${task['user_id'] ?? ''}';
     final doctor     = task['doctor_name'] ?? 'N/A';
     final clinic     = task['clinic_name'] ?? 'N/A';
+    final area       = (task['area'] ?? '').toString().trim();
     final basis      = task['task_basis']  ?? 'Daily';
     final category   = task['task_category'] ?? '';
     final address    = task['clinic_address'] ?? '';
@@ -6362,6 +6422,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const SizedBox(height: 8),
 
           // Doctor & Clinic details
+          if (area.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+              margin: const EdgeInsets.only(bottom: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Text(
+                'AREA: ${area.toUpperCase()}',
+                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+              ),
+            ),
+          ],
           Row(
             children: [
               const Icon(Icons.person_rounded, size: 15, color: Color(0xFF0284C7)),

@@ -23,8 +23,9 @@ $clinic_ids = isset($data['clinic_ids']) && is_array($data['clinic_ids']) ? $dat
 
 $doctor_names = isset($data['doctor_names']) && is_array($data['doctor_names']) ? $data['doctor_names'] : [];
 $clinic_names = isset($data['clinic_names']) && is_array($data['clinic_names']) ? $data['clinic_names'] : [];
+$area_names = isset($data['area_names']) && is_array($data['area_names']) ? $data['area_names'] : [];
 
-if (empty($doctor_ids) && empty($clinic_ids) && empty($doctor_names) && empty($clinic_names)) {
+if (empty($doctor_ids) && empty($clinic_ids) && empty($doctor_names) && empty($clinic_names) && empty($area_names)) {
   echo json_encode(["success" => false, "message" => "No records specified to restore."]);
   exit;
 }
@@ -42,10 +43,25 @@ if ($conn->connect_error) {
 
 $restored_doctor_ids = [];
 $restored_clinic_ids = [];
+$restored_area_names = [];
 
 $conn->begin_transaction();
 
 try {
+  // Restore areas
+  if (!empty($area_names)) {
+    foreach ($area_names as $aName) {
+      $area = trim((string)$aName);
+      if ($area === '') continue;
+
+      $stmt = $conn->prepare("DELETE FROM deleted_areas WHERE area = ?");
+      $stmt->bind_param("s", $area);
+      $stmt->execute();
+      $stmt->close();
+      $restored_area_names[] = $area;
+    }
+  }
+
   // Restore doctors by ID
   if (!empty($doctor_ids)) {
     foreach ($doctor_ids as $dId) {
@@ -105,13 +121,15 @@ try {
   }
 
   $conn->commit();
-  $total = max(count($restored_doctor_ids) + count($restored_clinic_ids), count($doctor_names) + count($clinic_names));
+  $total = max(count($restored_doctor_ids) + count($restored_clinic_ids) + count($restored_area_names), count($doctor_names) + count($clinic_names) + count($area_names));
 
   echo json_encode([
     "success" => true,
     "message" => "$total record" . ($total === 1 ? "" : "s") . " restored successfully.",
     "restored_doctor_ids" => $restored_doctor_ids,
-    "restored_clinic_ids" => $restored_clinic_ids
+    "deleted_doctor_ids" => $restored_doctor_ids,
+    "deleted_clinic_ids" => $restored_clinic_ids,
+    "restored_area_names" => $restored_area_names
   ]);
 } catch (Exception $e) {
   $conn->rollback();

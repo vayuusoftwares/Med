@@ -1773,6 +1773,7 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
                               final taskId = task['id'] ?? '';
                               final doctor = task['doctor_name'] ?? 'N/A';
                               final clinic = task['clinic_name'] ?? 'N/A';
+                              final area = (task['area'] ?? '').toString().trim();
                               final clinicAddress = task['clinic_address'] ?? '';
                               final sourceAddress = task['source_address'] ?? '';
                               final status = (task['status'] ?? 'pending').toString().toLowerCase();
@@ -1922,6 +1923,21 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
                                     const SizedBox(height: 10),
 
                                     // Row 2: Doctor & Clinic
+                                    if (area.isNotEmpty) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                        margin: const EdgeInsets.only(bottom: 6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEFF6FF),
+                                          borderRadius: BorderRadius.circular(5),
+                                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                                        ),
+                                        child: Text(
+                                          'AREA: ${area.toUpperCase()}',
+                                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                                        ),
+                                      ),
+                                    ],
                                     Row(
                                       children: [
                                         const Icon(Icons.local_hospital_rounded, size: 16, color: _emerald),

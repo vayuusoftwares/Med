@@ -8,7 +8,14 @@ import '../app_config.dart';
 /// MapUrlService — Resilient Google Maps URL & Coordinate Extraction Service
 /// ─────────────────────────────────────────────────────────────────────────────
 class MapUrlService {
-  /// Extract coordinates directly from a string using regex patterns without network requests.
+  /// Extract coordinates directly from a string using priority rules without network requests.
+  /// Priority order:
+  /// 1. Exact Google Maps place/pin coordinates (!3d<lat>!4d<lng> or !4d<lng>!3d<lat>)
+  /// 2. Explicit target/query/destination parameters (destination=, daddr=, q=, query=, loc=, ll=)
+  /// 3. geo: URI scheme (geo:lat,lng)
+  /// 4. Embedded static map marker coordinates or schema metadata
+  /// 5. Google Maps viewport/camera center coordinates (@lat,lng)
+  /// 6. Plain coordinate text format ("13.0827, 80.2707")
   static Map<String, double>? extractCoordinatesFromText(String rawText) {
     if (rawText.trim().isEmpty) return null;
 
@@ -16,30 +23,34 @@ class MapUrlService {
     final textsToTest = [rawText.trim(), decoded];
 
     for (final text in textsToTest) {
-      // 1. Google Maps standard @lat,lng format
-      final atMatch = RegExp(r'@(-?\d+\.\d+),(-?\d+\.\d+)').firstMatch(text);
-      if (atMatch != null) {
-        final coords = _validateCoords(atMatch.group(1), atMatch.group(2));
-        if (coords != null) return coords;
-      }
-
-      // 2. Google Maps Place format (!3d<lat>!4d<lng> or !4d<lng>!3d<lat>)
-      final placeMatch3d4d = RegExp(r'!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)').firstMatch(text);
+      // 1. PRIORITY 1: Exact Google Maps Place / Dropped Pin (!3d<lat>!4d<lng> or !4d<lng>!3d<lat>)
+      final placeMatch3d4d = RegExp(r'!3d(-?\d+\.\d+).*?!4d(-?\d+\.\d+)').firstMatch(text);
       if (placeMatch3d4d != null) {
         final coords = _validateCoords(placeMatch3d4d.group(1), placeMatch3d4d.group(2));
         if (coords != null) return coords;
       }
 
-      final placeMatch4d3d = RegExp(r'!4d(-?\d+\.\d+)!3d(-?\d+\.\d+)').firstMatch(text);
+      final placeMatch4d3d = RegExp(r'!4d(-?\d+\.\d+).*?!3d(-?\d+\.\d+)').firstMatch(text);
       if (placeMatch4d3d != null) {
         // Note: !4d is lng, !3d is lat
         final coords = _validateCoords(placeMatch4d3d.group(2), placeMatch4d3d.group(1));
         if (coords != null) return coords;
       }
 
-      // 3. Query params (q=, query=, loc=, center=, ll=, destination=, origin=, daddr=, saddr=)
+      // 2. PRIORITY 2: Explicit Target Location / Destination / Query / Pinned coords
+      // Handles destination=, daddr= (directions destination)
+      final destMatch = RegExp(
+        r'[?&](?:destination|daddr)=(-?\d+\.\d+)[,+](-?\d+\.\d+)',
+        caseSensitive: false,
+      ).firstMatch(text);
+      if (destMatch != null) {
+        final coords = _validateCoords(destMatch.group(1), destMatch.group(2));
+        if (coords != null) return coords;
+      }
+
+      // Handles q=loc:lat,lng or q=lat,lng, query=lat,lng, loc=lat,lng, ll=lat,lng
       final queryParamMatch = RegExp(
-        r'[?&](?:q|query|loc|center|ll|destination|origin|daddr|saddr)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)',
+        r'[?&](?:q|query|loc|ll|saddr)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)',
         caseSensitive: false,
       ).firstMatch(text);
       if (queryParamMatch != null) {
@@ -47,24 +58,32 @@ class MapUrlService {
         if (coords != null) return coords;
       }
 
-      // 4. geo: URI scheme (e.g. geo:13.0827,80.2707)
+      // 3. PRIORITY 3: geo: URI scheme (e.g. geo:13.0827,80.2707)
       final geoMatch = RegExp(r'geo:(-?\d+\.\d+),(-?\d+\.\d+)', caseSensitive: false).firstMatch(text);
       if (geoMatch != null) {
         final coords = _validateCoords(geoMatch.group(1), geoMatch.group(2));
         if (coords != null) return coords;
       }
 
-      // 5. Static map or embed image center coordinates
-      final staticMapMatch = RegExp(
-        r'staticmap\?[^"]*center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)',
+      // 4. PRIORITY 4: Static map marker or OpenGraph marker coordinates
+      final staticMapMarkerMatch = RegExp(
+        r'markers=(?:[^&]*?(?:%7C|\|))?(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)',
         caseSensitive: false,
       ).firstMatch(text);
-      if (staticMapMatch != null) {
-        final coords = _validateCoords(staticMapMatch.group(1), staticMapMatch.group(2));
+      if (staticMapMarkerMatch != null) {
+        final coords = _validateCoords(staticMapMarkerMatch.group(1), staticMapMarkerMatch.group(2));
         if (coords != null) return coords;
       }
 
-      // 6. Google Maps HTML / APP_INITIALIZATION_STATE coordinates
+      // Schema.org / OpenGraph meta tags
+      final metaLat = RegExp(r'itemprop="latitude"[^>]*content="(-?\d+\.\d+)"', caseSensitive: false).firstMatch(text);
+      final metaLng = RegExp(r'itemprop="longitude"[^>]*content="(-?\d+\.\d+)"', caseSensitive: false).firstMatch(text);
+      if (metaLat != null && metaLng != null) {
+        final coords = _validateCoords(metaLat.group(1), metaLng.group(1));
+        if (coords != null) return coords;
+      }
+
+      // Google Maps HTML / APP_INITIALIZATION_STATE coordinates
       final appInitMatch = RegExp(r'window\.APP_INITIALIZATION_STATE\s*=\s*\[\[\[(-?\d+\.\d+),(-?\d+\.\d+)\]').firstMatch(text);
       if (appInitMatch != null) {
         final coords = _validateCoords(appInitMatch.group(1), appInitMatch.group(2));
@@ -77,22 +96,32 @@ class MapUrlService {
         if (coords != null) return coords;
       }
 
-      // 7. Schema.org / OpenGraph meta tags
-      final metaLat = RegExp(r'itemprop="latitude"[^>]*content="(-?\d+\.\d+)"', caseSensitive: false).firstMatch(text);
-      final metaLng = RegExp(r'itemprop="longitude"[^>]*content="(-?\d+\.\d+)"', caseSensitive: false).firstMatch(text);
-      if (metaLat != null && metaLng != null) {
-        final coords = _validateCoords(metaLat.group(1), metaLng.group(1));
+      // 5. PRIORITY 5: Viewport / Camera Coordinates (@lat,lng)
+      // Only matched if no exact pin / place coordinates were found above
+      final atMatch = RegExp(r'@(-?\d+\.\d+),(-?\d+\.\d+)').firstMatch(text);
+      if (atMatch != null) {
+        final coords = _validateCoords(atMatch.group(1), atMatch.group(2));
         if (coords != null) return coords;
       }
 
-      // 8. Plain coordinate string (e.g. "13.0827, 80.2707" or "(13.0827, 80.2707)")
+      // Static map center fallback (only if no marker was found)
+      final staticMapCenterMatch = RegExp(
+        r'staticmap\?[^"]*center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)',
+        caseSensitive: false,
+      ).firstMatch(text);
+      if (staticMapCenterMatch != null) {
+        final coords = _validateCoords(staticMapCenterMatch.group(1), staticMapCenterMatch.group(2));
+        if (coords != null) return coords;
+      }
+
+      // 6. PRIORITY 6: Plain coordinate string (e.g. "13.0827, 80.2707" or "(13.0827, 80.2707)")
       final plainMatch = RegExp(r'^\s*\(?\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\)?\s*$').firstMatch(text);
       if (plainMatch != null) {
         final coords = _validateCoords(plainMatch.group(1), plainMatch.group(2));
         if (coords != null) return coords;
       }
 
-      // 9. Generic lat,lng embedded in text (with at least 4 decimal places)
+      // Generic lat,lng embedded in text (with at least 4 decimal places)
       final genericMatch = RegExp(r'(-?\d{1,3}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})').firstMatch(text);
       if (genericMatch != null) {
         final coords = _validateCoords(genericMatch.group(1), genericMatch.group(2));

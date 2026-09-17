@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 class TaskPerformance {
   final int taskId;
@@ -7,6 +7,7 @@ class TaskPerformance {
   final String doctorName;
   final String clinicName;
   final String clinicAddress;
+  final String area;
   final String taskCategory;
   final String taskBasis;
   final String notes;
@@ -31,6 +32,7 @@ class TaskPerformance {
     required this.doctorName,
     required this.clinicName,
     required this.clinicAddress,
+    this.area = '',
     required this.taskCategory,
     required this.taskBasis,
     required this.notes,
@@ -81,6 +83,7 @@ class TaskPerformance {
       doctorName: (j['doctor_name'] ?? '').toString(),
       clinicName: (j['clinic_name'] ?? '').toString(),
       clinicAddress: (j['clinic_address'] ?? '').toString(),
+      area: (j['area'] ?? '').toString(),
       taskCategory: (j['task_category'] ?? '').toString(),
       taskBasis: (j['task_basis'] ?? 'Daily').toString(),
       notes: (j['notes'] ?? '').toString(),

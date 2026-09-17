@@ -48,6 +48,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS doctors (
 )");
 $doctorCols = [
     'phone' => "VARCHAR(50) NOT NULL DEFAULT ''",
+    'area' => "VARCHAR(100) NOT NULL DEFAULT ''",
     'added_by' => "INT UNSIGNED NOT NULL DEFAULT 0",
     'is_deleted' => "TINYINT(1) NOT NULL DEFAULT 0",
     'deleted_at' => "DATETIME NULL"
@@ -69,6 +70,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS clinics (
     address VARCHAR(255) NOT NULL,
     phone VARCHAR(50) NOT NULL DEFAULT '',
     map_url TEXT NULL,
+    area VARCHAR(100) NOT NULL DEFAULT '',
     added_by INT UNSIGNED NOT NULL DEFAULT 0,
     is_deleted TINYINT(1) NOT NULL DEFAULT 0,
     deleted_at DATETIME NULL
@@ -76,6 +78,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS clinics (
 $clinicCols = [
     'phone' => "VARCHAR(50) NOT NULL DEFAULT ''",
     'map_url' => "TEXT NULL",
+    'area' => "VARCHAR(100) NOT NULL DEFAULT ''",
     'added_by' => "INT UNSIGNED NOT NULL DEFAULT 0",
     'is_deleted' => "TINYINT(1) NOT NULL DEFAULT 0",
     'deleted_at' => "DATETIME NULL"
@@ -88,6 +91,23 @@ foreach ($clinicCols as $col => $def) {
 }
 echo "Table clinics OK.<br>";
 
+// ── areas ──────────────────────────────────────────────────────────────────
+$conn->query("CREATE TABLE IF NOT EXISTS areas (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    added_by INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)");
+echo "Table areas OK.<br>";
+
+// ── deleted_areas ──────────────────────────────────────────────────────────
+$conn->query("CREATE TABLE IF NOT EXISTS deleted_areas (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    area VARCHAR(100) NOT NULL UNIQUE,
+    deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)");
+echo "Table deleted_areas OK.<br>";
+
 // ── tasks ──────────────────────────────────────────────────────────────────
 $conn->query("CREATE TABLE IF NOT EXISTS tasks (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -97,6 +117,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS tasks (
     doctor_name VARCHAR(100) NOT NULL,
     clinic_name VARCHAR(100) NOT NULL,
     task_category VARCHAR(100),
+    area VARCHAR(100) NOT NULL DEFAULT '',
     source_lat DOUBLE,
     source_lng DOUBLE,
     clinic_lat DOUBLE NOT NULL,
@@ -117,6 +138,7 @@ $extraCols = [
     'assigned_to_name'           => "VARCHAR(100) NOT NULL DEFAULT ''",
     'task_name'                  => "VARCHAR(150) NOT NULL DEFAULT 'Customer Visit'",
     'task_category'              => "VARCHAR(100) AFTER clinic_name",
+    'area'                       => "VARCHAR(100) NOT NULL DEFAULT ''",
     'source_lat'                 => "DOUBLE AFTER task_category",
     'source_lng'                 => "DOUBLE AFTER source_lat",
     'source_address'             => "VARCHAR(255) NULL DEFAULT ''",

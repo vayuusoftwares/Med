@@ -66,6 +66,7 @@ class _RepTask {
   final String clinicAddress;
   final String taskCategory;
   final String taskBasis;
+  final String area;
   final String notes;
   final String status;
   final LatLng destinationLatLng;
@@ -83,6 +84,7 @@ class _RepTask {
     required this.clinicAddress,
     required this.taskCategory,
     required this.taskBasis,
+    this.area = '',
     required this.notes,
     required this.status,
     required this.destinationLatLng,
@@ -412,6 +414,7 @@ class _AdminLiveTrackingScreenState extends State<AdminLiveTrackingScreen> {
           clinicAddress: (t['clinic_address'] ?? '').toString(),
           taskCategory: (t['task_category'] ?? '').toString(),
           taskBasis: (t['task_basis'] ?? 'Daily').toString(),
+          area: (t['area'] ?? '').toString(),
           notes: (t['notes'] ?? '').toString(),
           status: (t['status'] ?? 'pending').toString(),
           destinationLatLng: LatLng(lat, lng),
@@ -598,6 +601,10 @@ class _AdminLiveTrackingScreenState extends State<AdminLiveTrackingScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            if (task.area.isNotEmpty) ...[
+              _taskInfoTile(Icons.location_city_rounded, 'Area / Division', task.area.toUpperCase()),
+              const SizedBox(height: 8),
+            ],
             _taskInfoTile(Icons.person_rounded, 'Doctor', task.doctorName),
             const SizedBox(height: 8),
             _taskInfoTile(Icons.category_rounded, 'Category & Basis',

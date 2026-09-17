@@ -96,6 +96,76 @@ void main() {
       expect(res['lng'], closeTo(-151.2093, 0.0001));
     });
 
+    test('prioritizes exact !3d/!4d pin coordinates OVER viewport @lat,lng center', () {
+      // Viewport center is 13.085500, 80.276000 but the exact pinned place is 11.016500, 79.852100
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://www.google.com/maps/place/MedSafe+Clinic/@13.085500,80.276000,17z/data=!4m6!3m5!1s0x3a52661000000001:0x1!8m2!3d11.016500!4d79.852100',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.016500));
+      expect(res['lng'], equals(79.852100));
+    });
+
+    test('prioritizes exact !4d/!3d reversed pin coordinates OVER viewport @lat,lng center', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://www.google.com/maps/place/Apollo/@13.0855,80.2760,17z/data=!4d79.345678!3d11.234567',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.234567));
+      expect(res['lng'], equals(79.345678));
+    });
+
+    test('extracts coordinates from destination= query param (Directions URL)', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://www.google.com/maps/dir/?api=1&destination=11.234567,79.345678',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.234567));
+      expect(res['lng'], equals(79.345678));
+    });
+
+    test('extracts coordinates from daddr= query param', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://maps.google.com/maps?saddr=13.0827,80.2707&daddr=11.234567,79.345678',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.234567));
+      expect(res['lng'], equals(79.345678));
+    });
+
+    test('preserves full coordinate precision without rounding', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://www.google.com/maps/place/Clinic/@13.0855,80.2760,17z/data=!3d11.01654321!4d79.85219876',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.01654321));
+      expect(res['lng'], equals(79.85219876));
+    });
+
+    test('extracts marker coordinates from staticmap URL with markers param', () {
+      final res = MapUrlService.extractCoordinatesFromText(
+        'https://maps.googleapis.com/maps/api/staticmap?center=13.0855,80.2760&zoom=14&size=400x400&markers=color:red%7C11.0165,79.8521',
+      );
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.0165));
+      expect(res['lng'], equals(79.8521));
+    });
+
+    test('extracts coordinates from HTML meta itemprop latitude/longitude tags', () {
+      final html = '''
+        <html>
+          <head>
+            <meta itemprop="latitude" content="11.016500" />
+            <meta itemprop="longitude" content="79.852100" />
+          </head>
+        </html>
+      ''';
+      final res = MapUrlService.extractCoordinatesFromText(html);
+      expect(res, isNotNull);
+      expect(res!['lat'], equals(11.016500));
+      expect(res['lng'], equals(79.852100));
+    });
+
     test('returns null for empty or invalid text', () {
       expect(MapUrlService.extractCoordinatesFromText(''), isNull);
       expect(MapUrlService.extractCoordinatesFromText('hello world'), isNull);

@@ -127,6 +127,7 @@ while ($row = $result->fetch_assoc()) {
         "doctor_name"                         => (string)($row['doctor_name'] ?? ''),
         "clinic_name"                         => (string)($row['clinic_name'] ?? ''),
         "task_category"                       => (string)($row['task_category'] ?? ''),
+        "area"                                => (string)($row['area'] ?? ''),
         "source_lat"                          => isset($row['source_lat']) ? (float)$row['source_lat'] : null,
         "source_lng"                          => isset($row['source_lng']) ? (float)$row['source_lng'] : null,
         "source_address"                      => (string)($row['source_address'] ?? ''),

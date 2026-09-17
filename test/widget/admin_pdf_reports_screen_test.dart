@@ -82,7 +82,7 @@ void main() {
   }
 
   group('AdminPdfReportsScreen Tests', () {
-    testWidgets('renders all section headers, options, and generate button', (WidgetTester tester) async {
+    testWidgets('renders all section headers, options, and view report button', (WidgetTester tester) async {
       await tester.pumpWidget(buildTestWidget());
       await tester.pumpAndSettle();
 
@@ -111,8 +111,8 @@ void main() {
       expect(find.text('Pending'), findsOneWidget);
       expect(find.text('Completed'), findsOneWidget);
 
-      // Verify Generate Button
-      expect(find.text('Generate PDF Report'), findsOneWidget);
+      // Verify View Report Button
+      expect(find.text('View Report'), findsOneWidget);
     });
 
     testWidgets('pre-selects specific Medical Rep when passed via props', (WidgetTester tester) async {
@@ -173,13 +173,33 @@ void main() {
       expect(find.text('1'), findsWidgets);
     });
 
+    testWidgets('tapping View Report opens Report Viewer in view mode with Download Report buttons', (WidgetTester tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        initialRepId: 101,
+        initialRepName: 'Rahul Sharma',
+      ));
+      await tester.pumpAndSettle();
+
+      // Scroll View Report into view and tap it
+      await tester.ensureVisible(find.text('View Report'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('View Report'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify we are in View Mode inside AdminReportViewerScreen
+      expect(find.text('Report View Mode: Review the document below, then tap Download Report.'), findsOneWidget);
+      expect(find.text('Download Report'), findsWidgets);
+    });
+
     testWidgets('embedded mode renders seamlessly without duplicate scaffold', (WidgetTester tester) async {
       await tester.pumpWidget(buildTestWidget(isEmbedded: true));
       await tester.pumpAndSettle();
 
       // When embedded, Scaffold AppBar title is not rendered
       expect(find.text('1. Select Medical Representative'), findsOneWidget);
-      expect(find.text('Generate PDF Report'), findsOneWidget);
+      expect(find.text('View Report'), findsOneWidget);
     });
   });
 }

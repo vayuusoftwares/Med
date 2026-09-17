@@ -32,6 +32,7 @@ $source_lng         = (float)($data['source_lng'] ?? 0);
 $clinic_lat         = (float)($data['clinic_lat'] ?? 0);
 $clinic_lng         = (float)($data['clinic_lng'] ?? 0);
 $clinic_address     = trim($data['clinic_address'] ?? '');
+$area               = trim($data['area'] ?? '');
 $notes              = trim($data['notes'] ?? '');
 $deadline_raw       = trim($data['deadline_date_time'] ?? ($data['deadline'] ?? ''));
 
@@ -48,13 +49,15 @@ if ($user_id < 0 || !$task_basis || !$doctor_name || !$clinic_name) {
     exit;
 }
 
+$conn->query("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS area VARCHAR(100) NOT NULL DEFAULT ''");
+
 $task_id = (int)($data['task_id'] ?? ($data['id'] ?? 0));
 
 if ($task_id > 0) {
     $stmt = $conn->prepare(
-        "UPDATE tasks SET user_id = ?, sales_rep_name = ?, task_basis = ?, doctor_name = ?, clinic_name = ?, task_category = ?, source_lat = ?, source_lng = ?, clinic_lat = ?, clinic_lng = ?, clinic_address = ?, notes = ?, deadline_date_time = COALESCE(?, deadline_date_time) WHERE id = ?"
+        "UPDATE tasks SET user_id = ?, sales_rep_name = ?, task_basis = ?, doctor_name = ?, clinic_name = ?, task_category = ?, area = ?, source_lat = ?, source_lng = ?, clinic_lat = ?, clinic_lng = ?, clinic_address = ?, notes = ?, deadline_date_time = COALESCE(?, deadline_date_time) WHERE id = ?"
     );
-    $stmt->bind_param("isssssddddsssi", $user_id, $sales_rep_name, $task_basis, $doctor_name, $clinic_name, $task_category, $source_lat, $source_lng, $clinic_lat, $clinic_lng, $clinic_address, $notes, $deadline_formatted, $task_id);
+    $stmt->bind_param("issssssddddsssi", $user_id, $sales_rep_name, $task_basis, $doctor_name, $clinic_name, $task_category, $area, $source_lat, $source_lng, $clinic_lat, $clinic_lng, $clinic_address, $notes, $deadline_formatted, $task_id);
     if ($stmt->execute()) {
         // Fetch updated task and sync performance
         $fetchRes = $conn->query("SELECT * FROM tasks WHERE id = $task_id");
@@ -68,10 +71,10 @@ if ($task_id > 0) {
     $stmt->close();
 } else {
     $stmt = $conn->prepare(
-        "INSERT INTO tasks (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes, deadline_date_time, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
+        "INSERT INTO tasks (user_id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, area, source_lat, source_lng, clinic_lat, clinic_lng, clinic_address, notes, deadline_date_time, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
     );
-    $stmt->bind_param("isssssddddsss", $user_id, $sales_rep_name, $task_basis, $doctor_name, $clinic_name, $task_category, $source_lat, $source_lng, $clinic_lat, $clinic_lng, $clinic_address, $notes, $deadline_formatted);
+    $stmt->bind_param("issssssddddsss", $user_id, $sales_rep_name, $task_basis, $doctor_name, $clinic_name, $task_category, $area, $source_lat, $source_lng, $clinic_lat, $clinic_lng, $clinic_address, $notes, $deadline_formatted);
 
     if ($stmt->execute()) {
         $newId = $conn->insert_id;

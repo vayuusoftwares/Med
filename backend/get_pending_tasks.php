@@ -19,7 +19,7 @@ if (!$user_id) {
 }
 
 $stmt = $conn->prepare(
-    "SELECT id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, clinic_lat, clinic_lng, clinic_address, notes, status, created_at
+    "SELECT id, sales_rep_name, task_basis, doctor_name, clinic_name, task_category, area, clinic_lat, clinic_lng, clinic_address, notes, status, created_at
      FROM tasks WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC"
 );
 $stmt->bind_param("i", $user_id);
@@ -35,6 +35,7 @@ while ($row = $result->fetch_assoc()) {
         "doctor_name"    => $row['doctor_name'],
         "clinic_name"    => $row['clinic_name'],
         "task_category"  => $row['task_category'] ?? '',
+        "area"           => $row['area'] ?? '',
         "clinic_lat"     => (float)$row['clinic_lat'],
         "clinic_lng"     => (float)$row['clinic_lng'],
         "clinic_address" => $row['clinic_address'],
