@@ -76,11 +76,29 @@ if ($result_clinics && $result_clinics->num_rows > 0) {
   }
 }
 
+// Fetch known Doctor + Clinic combinations from tasks
+$combinations = array();
+$sql_combos = "SELECT DISTINCT doctor_name, clinic_name, clinic_lat, clinic_lng, clinic_address FROM tasks WHERE doctor_name != '' AND clinic_name != '' ORDER BY id DESC";
+$result_combos = $conn->query($sql_combos);
+if ($result_combos && $result_combos->num_rows > 0) {
+  while($row = $result_combos->fetch_assoc()) {
+    $combinations[] = array(
+      "doctor_name" => $row["doctor_name"],
+      "clinic_name" => $row["clinic_name"],
+      "clinic_lat" => (float)$row["clinic_lat"],
+      "clinic_lng" => (float)$row["clinic_lng"],
+      "clinic_address" => $row["clinic_address"] ?? ""
+    );
+  }
+}
+
 $conn->close();
 
 // Return combined JSON
 echo json_encode(array(
   "doctors" => $doctors,
-  "clinics" => $clinics
+  "clinics" => $clinics,
+  "combinations" => $combinations
 ));
 ?>
+

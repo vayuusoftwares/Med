@@ -16,7 +16,22 @@ class _Doctor {
   final String speciality;
   final String phone;
   final int? addedBy;
+
   const _Doctor(this.name, this.speciality, [this.phone = '', this.id, this.addedBy]);
+
+  String get uniqueKey => id != null ? 'doc_$id' : 'doc_${name}_$speciality';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _Doctor &&
+          runtimeType == other.runtimeType &&
+          (id != null && other.id != null
+              ? id == other.id
+              : name == other.name && speciality == other.speciality && phone == other.phone);
+
+  @override
+  int get hashCode => id != null ? id.hashCode : Object.hash(name, speciality, phone);
 }
 
 class _Clinic {
@@ -27,7 +42,53 @@ class _Clinic {
   final String address;
   final String phone;
   final int? addedBy;
+
   const _Clinic(this.name, this.lat, this.lng, this.address, [this.phone = '', this.id, this.addedBy]);
+
+  String get uniqueKey => id != null ? 'clin_$id' : 'clin_${name}_${lat}_$lng';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _Clinic &&
+          runtimeType == other.runtimeType &&
+          (id != null && other.id != null
+              ? id == other.id
+              : name == other.name && lat == other.lat && lng == other.lng && address == other.address);
+
+  @override
+  int get hashCode => id != null ? id.hashCode : Object.hash(name, lat, lng, address);
+}
+
+class _DoctorClinicSuggestion {
+  final _Doctor doctor;
+  final _Clinic clinic;
+
+  const _DoctorClinicSuggestion({
+    required this.doctor,
+    required this.clinic,
+  });
+
+  String get title => '${doctor.name} — ${clinic.name}';
+  String get subtitle {
+    final parts = <String>[];
+    if (doctor.speciality.isNotEmpty) parts.add(doctor.speciality);
+    if (clinic.address.isNotEmpty) parts.add(clinic.address);
+    return parts.join(' • ');
+  }
+
+  String get uniqueKey => '${doctor.uniqueKey}_${clinic.uniqueKey}';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _DoctorClinicSuggestion &&
+          runtimeType == other.runtimeType &&
+          doctor == other.doctor &&
+          clinic == other.clinic;
+
+  @override
+  int get hashCode => Object.hash(doctor, clinic);
 }
 
 class _Visit {
@@ -74,6 +135,7 @@ class _TaskScreenState extends State<TaskScreen>
   String _locStatus = '';
   List<_Doctor> _doctors = [];
   List<_Clinic> _clinics = [];
+  List<_DoctorClinicSuggestion> _combinations = [];
   bool _isLoadingData = true;
   final List<String> _taskCategories = [
     'Gifts',
@@ -167,28 +229,70 @@ class _TaskScreenState extends State<TaskScreen>
       final data = json.decode(response.body);
       final doctorsJson = (data['doctors'] as List?) ?? [];
       final clinicsJson = (data['clinics'] as List?) ?? [];
+      final combosJson = (data['combinations'] as List?) ?? [];
+
+      final List<_Doctor> loadedDoctors = doctorsJson
+          .map((d) => _Doctor(
+                d['name']?.toString() ?? '',
+                d['speciality']?.toString() ?? '',
+                d['phone']?.toString() ?? '',
+                (d['id'] as num?)?.toInt(),
+                (d['added_by'] as num?)?.toInt(),
+              ))
+          .toList();
+
+      final List<_Clinic> loadedClinics = clinicsJson
+          .map((c) => _Clinic(
+                c['name']?.toString() ?? '',
+                (c['lat'] as num?)?.toDouble() ?? 0.0,
+                (c['lng'] as num?)?.toDouble() ?? 0.0,
+                c['address']?.toString() ?? '',
+                c['phone']?.toString() ?? '',
+                (c['id'] as num?)?.toInt(),
+                (c['added_by'] as num?)?.toInt(),
+              ))
+          .toList();
+
+      final List<_DoctorClinicSuggestion> loadedCombos = [];
+      for (final cb in combosJson) {
+        final dName = cb['doctor_name']?.toString().trim() ?? '';
+        final cName = cb['clinic_name']?.toString().trim() ?? '';
+        if (dName.isEmpty || cName.isEmpty) continue;
+
+        _Doctor? matchedDoc;
+        for (final d in loadedDoctors) {
+          if (d.name.toLowerCase() == dName.toLowerCase()) {
+            matchedDoc = d;
+            break;
+          }
+        }
+        matchedDoc ??= _Doctor(dName, 'General Physician');
+
+        _Clinic? matchedClin;
+        for (final c in loadedClinics) {
+          if (c.name.toLowerCase() == cName.toLowerCase()) {
+            matchedClin = c;
+            break;
+          }
+        }
+        matchedClin ??= _Clinic(
+          cName,
+          (cb['clinic_lat'] as num?)?.toDouble() ?? 0.0,
+          (cb['clinic_lng'] as num?)?.toDouble() ?? 0.0,
+          cb['clinic_address']?.toString() ?? '',
+        );
+
+        final suggestion = _DoctorClinicSuggestion(doctor: matchedDoc, clinic: matchedClin);
+        if (!loadedCombos.any((item) => item.uniqueKey == suggestion.uniqueKey)) {
+          loadedCombos.add(suggestion);
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _doctors = doctorsJson
-              .map((d) => _Doctor(
-                    d['name']?.toString() ?? '',
-                    d['speciality']?.toString() ?? '',
-                    d['phone']?.toString() ?? '',
-                    (d['id'] as num?)?.toInt(),
-                    (d['added_by'] as num?)?.toInt(),
-                  ))
-              .toList();
-          _clinics = clinicsJson
-              .map((c) => _Clinic(
-                    c['name']?.toString() ?? '',
-                    (c['lat'] as num?)?.toDouble() ?? 0.0,
-                    (c['lng'] as num?)?.toDouble() ?? 0.0,
-                    c['address']?.toString() ?? '',
-                    c['phone']?.toString() ?? '',
-                    (c['id'] as num?)?.toInt(),
-                    (c['added_by'] as num?)?.toInt(),
-                  ))
-              .toList();
+          _doctors = loadedDoctors;
+          _clinics = loadedClinics;
+          _combinations = loadedCombos;
           _applyExistingTask();
           _isLoadingData = false;
         });
@@ -222,7 +326,10 @@ class _TaskScreenState extends State<TaskScreen>
     _Doctor? doc;
     if (docName.isNotEmpty) {
       for (final d in _doctors) {
-        if (d.name == docName) { doc = d; break; }
+        if (d.name.toLowerCase() == docName.toLowerCase()) {
+          doc = d;
+          break;
+        }
       }
       doc ??= _Doctor(docName, 'General Physician');
       if (!_doctors.contains(doc)) _doctors.add(doc);
@@ -231,7 +338,10 @@ class _TaskScreenState extends State<TaskScreen>
     _Clinic? clin;
     if (clinName.isNotEmpty) {
       for (final c in _clinics) {
-        if (c.name == clinName) { clin = c; break; }
+        if (c.name.toLowerCase() == clinName.toLowerCase()) {
+          clin = c;
+          break;
+        }
       }
       if (clin == null) {
         final lat = (ext['clinic_lat'] as num?)?.toDouble() ?? 0.0;
@@ -239,6 +349,13 @@ class _TaskScreenState extends State<TaskScreen>
         final addr = ext['clinic_address'] as String? ?? '';
         clin = _Clinic(clinName, lat, lng, addr);
         _clinics.add(clin);
+      }
+    }
+
+    if (doc != null && clin != null) {
+      final pair = _DoctorClinicSuggestion(doctor: doc, clinic: clin);
+      if (!_combinations.any((item) => item.uniqueKey == pair.uniqueKey)) {
+        _combinations.add(pair);
       }
     }
 
@@ -260,6 +377,66 @@ class _TaskScreenState extends State<TaskScreen>
         _deadlineDate = dt;
         _deadlineTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
       } catch (_) {}
+    }
+  }
+
+  Future<void> _openDoctorPicker(int dayIndex, int visitIndex) async {
+    final visit = _dayPlans[dayIndex].visits[visitIndex];
+    final result = await showModalBottomSheet<dynamic>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PickerSheet<_Doctor>(
+        hint: 'Select or Search Doctor',
+        items: _doctors,
+        combinations: _combinations,
+        selected: visit.doctor,
+        label: (d) => d.name,
+        subtitle: (d) => d.speciality + (d.phone.isNotEmpty ? ' • ${d.phone}' : ''),
+        isDoctorPicker: true,
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        if (result is _DoctorClinicSuggestion) {
+          visit.doctor = result.doctor;
+          visit.clinic = result.clinic;
+        } else if (result is _Doctor) {
+          visit.doctor = result;
+        }
+      });
+    }
+  }
+
+  Future<void> _openClinicPicker(int dayIndex, int visitIndex) async {
+    final visit = _dayPlans[dayIndex].visits[visitIndex];
+    final result = await showModalBottomSheet<dynamic>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PickerSheet<_Clinic>(
+        hint: 'Select or Search Clinic / Hospital',
+        items: _clinics,
+        combinations: _combinations,
+        selected: visit.clinic,
+        label: (c) => c.name,
+        subtitle: (c) => c.address.isNotEmpty
+            ? c.address
+            : (c.lat != 0 ? 'Lat: ${c.lat.toStringAsFixed(4)}, Lng: ${c.lng.toStringAsFixed(4)}' : ''),
+        isDoctorPicker: false,
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        if (result is _DoctorClinicSuggestion) {
+          visit.doctor = result.doctor;
+          visit.clinic = result.clinic;
+        } else if (result is _Clinic) {
+          visit.clinic = result;
+        }
+      });
     }
   }
 
@@ -1246,30 +1423,42 @@ class _TaskScreenState extends State<TaskScreen>
                 ],
               ),
               const SizedBox(height: 8),
-              // ── Doctor row with + button ──
+              // ── Doctor row with autocomplete & + button ──
               Row(children: [
-                Expanded(child: _styledDropdown<_Doctor>(
-                  hint: 'Select Doctor',
-                  value: _dayPlans[i].visits[vIndex].doctor,
-                  items: _doctors,
-                  label: (d) => d.name,
-                  subtitle: (d) => d.speciality,
-                  onChanged: (d) => setState(() => _dayPlans[i].visits[vIndex].doctor = d),
-                )),
+                Expanded(
+                  child: _DoctorAutocompleteField(
+                    selectedDoctor: _dayPlans[i].visits[vIndex].doctor,
+                    doctors: _doctors,
+                    combinations: _combinations,
+                    onDoctorSelected: (d) => setState(() => _dayPlans[i].visits[vIndex].doctor = d),
+                    onSuggestionSelected: (s) => setState(() {
+                      _dayPlans[i].visits[vIndex].doctor = s.doctor;
+                      _dayPlans[i].visits[vIndex].clinic = s.clinic;
+                    }),
+                    onOpenPicker: () => _openDoctorPicker(i, vIndex),
+                    onAddNew: _showAddDoctorDialog,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 _addBtn(onTap: _showAddDoctorDialog, tooltip: 'Add new doctor'),
               ]),
               const SizedBox(height: 12),
-              // ── Clinic row with + button ──
+              // ── Clinic row with autocomplete & + button ──
               Row(children: [
-                Expanded(child: _styledDropdown<_Clinic>(
-                  hint: 'Select Clinic / Hospital',
-                  value: _dayPlans[i].visits[vIndex].clinic,
-                  items: _clinics,
-                  label: (c) => c.name,
-                  subtitle: (c) => c.address,
-                  onChanged: (c) => setState(() => _dayPlans[i].visits[vIndex].clinic = c),
-                )),
+                Expanded(
+                  child: _ClinicAutocompleteField(
+                    selectedClinic: _dayPlans[i].visits[vIndex].clinic,
+                    clinics: _clinics,
+                    combinations: _combinations,
+                    onClinicSelected: (c) => setState(() => _dayPlans[i].visits[vIndex].clinic = c),
+                    onSuggestionSelected: (s) => setState(() {
+                      _dayPlans[i].visits[vIndex].doctor = s.doctor;
+                      _dayPlans[i].visits[vIndex].clinic = s.clinic;
+                    }),
+                    onOpenPicker: () => _openClinicPicker(i, vIndex),
+                    onAddNew: _showAddClinicDialog,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 _addBtn(onTap: _showAddClinicDialog, tooltip: 'Add new clinic'),
               ]),
@@ -1536,21 +1725,497 @@ class _GlassBtn extends StatelessWidget {
   }
 }
 
+// ─── Doctor Autocomplete Field Widget ────────────────────────────────────────
+
+class _DoctorAutocompleteField extends StatefulWidget {
+  final _Doctor? selectedDoctor;
+  final List<_Doctor> doctors;
+  final List<_DoctorClinicSuggestion> combinations;
+  final void Function(_Doctor doctor) onDoctorSelected;
+  final void Function(_DoctorClinicSuggestion suggestion) onSuggestionSelected;
+  final VoidCallback onOpenPicker;
+  final VoidCallback onAddNew;
+
+  const _DoctorAutocompleteField({
+    required this.selectedDoctor,
+    required this.doctors,
+    required this.combinations,
+    required this.onDoctorSelected,
+    required this.onSuggestionSelected,
+    required this.onOpenPicker,
+    required this.onAddNew,
+  });
+
+  @override
+  State<_DoctorAutocompleteField> createState() => _DoctorAutocompleteFieldState();
+}
+
+class _DoctorAutocompleteFieldState extends State<_DoctorAutocompleteField> {
+  final _textController = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.selectedDoctor != null) {
+      _textController.text = widget.selectedDoctor!.name;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DoctorAutocompleteField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedDoctor != oldWidget.selectedDoctor) {
+      final newText = widget.selectedDoctor?.name ?? '';
+      if (_textController.text != newText && !_focusNode.hasFocus) {
+        _textController.text = newText;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<Object>(
+      textEditingController: _textController,
+      focusNode: _focusNode,
+      displayStringForOption: (option) {
+        if (option is _DoctorClinicSuggestion) {
+          return option.doctor.name;
+        } else if (option is _Doctor) {
+          return option.name;
+        }
+        return '';
+      },
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        final q = textEditingValue.text.trim().toLowerCase();
+        if (q.isEmpty) {
+          return const Iterable<Object>.empty();
+        }
+
+        final List<Object> results = [];
+
+        // Matching Doctor + Clinic combinations
+        final matchingCombos = widget.combinations.where((c) {
+          final doc = c.doctor.name.toLowerCase();
+          final clin = c.clinic.name.toLowerCase();
+          final spec = c.doctor.speciality.toLowerCase();
+          return doc.contains(q) || clin.contains(q) || spec.contains(q);
+        }).toList();
+        results.addAll(matchingCombos);
+
+        // Matching Doctors that are not already listed
+        final matchingDocs = widget.doctors.where((d) {
+          final name = d.name.toLowerCase();
+          final spec = d.speciality.toLowerCase();
+          final inCombos = matchingCombos.any((c) =>
+              (c.doctor.id != null && d.id != null && c.doctor.id == d.id) ||
+              c.doctor.name.toLowerCase() == d.name.toLowerCase());
+          return (name.contains(q) || spec.contains(q)) && !inCombos;
+        }).toList();
+        results.addAll(matchingDocs);
+
+        return results;
+      },
+      onSelected: (option) {
+        if (option is _DoctorClinicSuggestion) {
+          _textController.text = option.doctor.name;
+          widget.onSuggestionSelected(option);
+        } else if (option is _Doctor) {
+          _textController.text = option.name;
+          widget.onDoctorSelected(option);
+        }
+        _focusNode.unfocus();
+      },
+      fieldViewBuilder: (ctx, controller, focusNode, onFieldSubmitted) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0FDF4),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: focusNode.hasFocus ? const Color(0xFF00A86B) : const Color(0xFFD1FAE5),
+              width: focusNode.hasFocus ? 1.5 : 1.2,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1B4332),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Select or Type Doctor...',
+                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.w400),
+                    prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00A86B), size: 18),
+                    suffixIcon: controller.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 16, color: Color(0xFF94A3B8)),
+                            onPressed: () {
+                              controller.clear();
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF00A86B), size: 20),
+                tooltip: 'Browse Doctors',
+                onPressed: widget.onOpenPicker,
+              ),
+            ],
+          ),
+        );
+      },
+      optionsViewBuilder: (ctx, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(14),
+            color: Colors.white,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280, maxWidth: 360),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, unused) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                itemBuilder: (context, index) {
+                  final option = options.elementAt(index);
+                  if (option is _DoctorClinicSuggestion) {
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.hub_rounded, size: 16, color: Color(0xFF065F46)),
+                      ),
+                      title: Text(
+                        '${option.doctor.name} — ${option.clinic.name}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1B4332)),
+                      ),
+                      subtitle: Text(
+                        option.subtitle,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF52796F)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                        ),
+                        child: const Text('Pair', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
+                      ),
+                      onTap: () => onSelected(option),
+                    );
+                  } else if (option is _Doctor) {
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.person_rounded, size: 16, color: Color(0xFF4B5563)),
+                      ),
+                      title: Text(
+                        option.name,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                      ),
+                      subtitle: Text(
+                        option.speciality + (option.phone.isNotEmpty ? ' • ${option.phone}' : ''),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                      ),
+                      onTap: () => onSelected(option),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Clinic Autocomplete Field Widget ────────────────────────────────────────
+
+class _ClinicAutocompleteField extends StatefulWidget {
+  final _Clinic? selectedClinic;
+  final List<_Clinic> clinics;
+  final List<_DoctorClinicSuggestion> combinations;
+  final void Function(_Clinic clinic) onClinicSelected;
+  final void Function(_DoctorClinicSuggestion suggestion) onSuggestionSelected;
+  final VoidCallback onOpenPicker;
+  final VoidCallback onAddNew;
+
+  const _ClinicAutocompleteField({
+    required this.selectedClinic,
+    required this.clinics,
+    required this.combinations,
+    required this.onClinicSelected,
+    required this.onSuggestionSelected,
+    required this.onOpenPicker,
+    required this.onAddNew,
+  });
+
+  @override
+  State<_ClinicAutocompleteField> createState() => _ClinicAutocompleteFieldState();
+}
+
+class _ClinicAutocompleteFieldState extends State<_ClinicAutocompleteField> {
+  final _textController = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.selectedClinic != null) {
+      _textController.text = widget.selectedClinic!.name;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ClinicAutocompleteField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedClinic != oldWidget.selectedClinic) {
+      final newText = widget.selectedClinic?.name ?? '';
+      if (_textController.text != newText && !_focusNode.hasFocus) {
+        _textController.text = newText;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<Object>(
+      textEditingController: _textController,
+      focusNode: _focusNode,
+      displayStringForOption: (option) {
+        if (option is _DoctorClinicSuggestion) {
+          return option.clinic.name;
+        } else if (option is _Clinic) {
+          return option.name;
+        }
+        return '';
+      },
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        final q = textEditingValue.text.trim().toLowerCase();
+        if (q.isEmpty) {
+          return const Iterable<Object>.empty();
+        }
+
+        final List<Object> results = [];
+
+        // Matching Doctor + Clinic combinations
+        final matchingCombos = widget.combinations.where((c) {
+          final doc = c.doctor.name.toLowerCase();
+          final clin = c.clinic.name.toLowerCase();
+          final addr = c.clinic.address.toLowerCase();
+          return doc.contains(q) || clin.contains(q) || addr.contains(q);
+        }).toList();
+        results.addAll(matchingCombos);
+
+        // Matching Clinics that are not already listed
+        final matchingClinics = widget.clinics.where((c) {
+          final name = c.name.toLowerCase();
+          final addr = c.address.toLowerCase();
+          final inCombos = matchingCombos.any((item) =>
+              (item.clinic.id != null && c.id != null && item.clinic.id == c.id) ||
+              item.clinic.name.toLowerCase() == c.name.toLowerCase());
+          return (name.contains(q) || addr.contains(q)) && !inCombos;
+        }).toList();
+        results.addAll(matchingClinics);
+
+        return results;
+      },
+      onSelected: (option) {
+        if (option is _DoctorClinicSuggestion) {
+          _textController.text = option.clinic.name;
+          widget.onSuggestionSelected(option);
+        } else if (option is _Clinic) {
+          _textController.text = option.name;
+          widget.onClinicSelected(option);
+        }
+        _focusNode.unfocus();
+      },
+      fieldViewBuilder: (ctx, controller, focusNode, onFieldSubmitted) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0FDF4),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: focusNode.hasFocus ? const Color(0xFF00A86B) : const Color(0xFFD1FAE5),
+              width: focusNode.hasFocus ? 1.5 : 1.2,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1B4332),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Select or Type Clinic / Hospital...',
+                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.w400),
+                    prefixIcon: const Icon(Icons.local_hospital_outlined, color: Color(0xFF00A86B), size: 18),
+                    suffixIcon: controller.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 16, color: Color(0xFF94A3B8)),
+                            onPressed: () {
+                              controller.clear();
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF00A86B), size: 20),
+                tooltip: 'Browse Clinics',
+                onPressed: widget.onOpenPicker,
+              ),
+            ],
+          ),
+        );
+      },
+      optionsViewBuilder: (ctx, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(14),
+            color: Colors.white,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280, maxWidth: 360),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, unused) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                itemBuilder: (context, index) {
+                  final option = options.elementAt(index);
+                  if (option is _DoctorClinicSuggestion) {
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.hub_rounded, size: 16, color: Color(0xFF065F46)),
+                      ),
+                      title: Text(
+                        '${option.doctor.name} — ${option.clinic.name}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1B4332)),
+                      ),
+                      subtitle: Text(
+                        option.subtitle,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF52796F)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                        ),
+                        child: const Text('Pair', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
+                      ),
+                      onTap: () => onSelected(option),
+                    );
+                  } else if (option is _Clinic) {
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.local_hospital_rounded, size: 16, color: Color(0xFF4B5563)),
+                      ),
+                      title: Text(
+                        option.name,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                      ),
+                      subtitle: Text(
+                        option.address.isNotEmpty ? option.address : 'Lat: ${option.lat.toStringAsFixed(4)}, Lng: ${option.lng.toStringAsFixed(4)}',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                      ),
+                      onTap: () => onSelected(option),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ─── Bottom-sheet picker widget (no intrinsic height issues) ─────────────────
 
 class _PickerSheet<T> extends StatefulWidget {
   final String hint;
   final List<T> items;
+  final List<_DoctorClinicSuggestion>? combinations;
   final T? selected;
   final String Function(T) label;
   final String Function(T)? subtitle;
+  final bool isDoctorPicker;
 
   const _PickerSheet({
     required this.hint,
     required this.items,
+    this.combinations,
     required this.selected,
     required this.label,
     this.subtitle,
+    this.isDoctorPicker = false,
   });
 
   @override
@@ -1562,17 +2227,27 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _search.isEmpty
+    final q = _search.trim().toLowerCase();
+
+    final filtered = q.isEmpty
         ? widget.items
         : widget.items.where((item) {
-            final q = _search.toLowerCase();
             final name = widget.label(item).toLowerCase();
             final sub = widget.subtitle?.call(item).toLowerCase() ?? '';
             return name.contains(q) || sub.contains(q);
           }).toList();
 
+    final matchingCombos = (widget.combinations ?? []).where((item) {
+      if (q.isEmpty) return false;
+      final docName = item.doctor.name.toLowerCase();
+      final clinName = item.clinic.name.toLowerCase();
+      final spec = item.doctor.speciality.toLowerCase();
+      final addr = item.clinic.address.toLowerCase();
+      return docName.contains(q) || clinName.contains(q) || spec.contains(q) || addr.contains(q);
+    }).toList();
+
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
+      initialChildSize: 0.65,
       minChildSize: 0.4,
       maxChildSize: 0.92,
       expand: false,
@@ -1632,9 +2307,15 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
                 onChanged: (v) => setState(() => _search = v),
                 style: const TextStyle(fontSize: 13, color: Color(0xFF1B4332)),
                 decoration: InputDecoration(
-                  hintText: 'Search...',
+                  hintText: 'Search by Doctor or Clinic name, address...',
                   hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
                   prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00A86B), size: 20),
+                  suffixIcon: _search.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF94A3B8)),
+                          onPressed: () => setState(() => _search = ''),
+                        )
+                      : null,
                   filled: true,
                   fillColor: const Color(0xFFF0FDF4),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1656,69 +2337,141 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
             // ── Items list ──
             Expanded(
-              child: filtered.isEmpty
+              child: (filtered.isEmpty && matchingCombos.isEmpty)
                   ? const Center(
                       child: Text(
                         'No results found',
                         style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
                       ),
                     )
-                  : ListView.separated(
+                  : ListView(
                       controller: scrollCtrl,
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                      itemBuilder: (_, index) {
-                        final item = filtered[index];
-                        final isSelected = item == widget.selected;
-                        final sub = widget.subtitle?.call(item);
-                        return InkWell(
-                          onTap: () => Navigator.pop(ctx, item),
-                          child: Container(
-                            color: isSelected
-                                ? const Color(0xFFD1FAE5)
-                                : Colors.transparent,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      children: [
+                        // If matching doctor+clinic combinations exist
+                        if (matchingCombos.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            color: const Color(0xFFF0FDF4),
                             child: Row(
                               children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        widget.label(item),
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                          color: isSelected
-                                              ? const Color(0xFF065F46)
-                                              : const Color(0xFF1B4332),
-                                        ),
-                                      ),
-                                      if (sub != null && sub.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          sub,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: isSelected
-                                                ? const Color(0xFF047857)
-                                                : const Color(0xFF52796F),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                const Icon(Icons.hub_rounded, size: 14, color: Color(0xFF047857)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'MATCHING DOCTOR & CLINIC PAIRS (${matchingCombos.length})',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF065F46), letterSpacing: 0.5),
                                 ),
-                                if (isSelected)
-                                  const Icon(Icons.check_circle_rounded,
-                                      color: Color(0xFF00A86B), size: 20),
                               ],
                             ),
                           ),
-                        );
-                      },
+                          for (final combo in matchingCombos)
+                            InkWell(
+                              onTap: () => Navigator.pop(ctx, combo),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                decoration: const BoxDecoration(
+                                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFD1FAE5),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(Icons.hub_rounded, size: 16, color: Color(0xFF065F46)),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${combo.doctor.name} — ${combo.clinic.name}',
+                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1B4332)),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            combo.subtitle,
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF52796F)),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFF00A86B)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (filtered.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              color: const Color(0xFFF8FAFC),
+                              child: Row(
+                                children: [
+                                  Icon(widget.isDoctorPicker ? Icons.medical_services_rounded : Icons.local_hospital_rounded, size: 14, color: const Color(0xFF475569)),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'INDIVIDUAL RECORDS (${filtered.length})',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF475569), letterSpacing: 0.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                        // Individual records
+                        for (int i = 0; i < filtered.length; i++) ...[
+                          Builder(builder: (_) {
+                            final item = filtered[i];
+                            final isSelected = item == widget.selected;
+                            final sub = widget.subtitle?.call(item);
+                            return InkWell(
+                              onTap: () => Navigator.pop(ctx, item),
+                              child: Container(
+                                color: isSelected ? const Color(0xFFD1FAE5) : Colors.transparent,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                decoration: const BoxDecoration(
+                                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            widget.label(item),
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w700,
+                                              color: isSelected ? const Color(0xFF065F46) : const Color(0xFF1B4332),
+                                            ),
+                                          ),
+                                          if (sub != null && sub.isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              sub,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isSelected ? const Color(0xFF047857) : const Color(0xFF52796F),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      const Icon(Icons.check_circle_rounded, color: Color(0xFF00A86B), size: 20),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ],
                     ),
             ),
           ],
