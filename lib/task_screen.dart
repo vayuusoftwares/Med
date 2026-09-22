@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
 import 'models/user_model.dart';
 import 'app_config.dart';
 import 'services/map_url_service.dart';
@@ -20,19 +22,18 @@ class _Doctor {
 
   const _Doctor(this.name, this.speciality, [this.phone = '', this.id, this.addedBy, this.area = '']);
 
-  String get uniqueKey => id != null ? 'doc_$id' : 'doc_${name}_${speciality}_$area';
+  String get uniqueKey => id != null && id! > 0 ? 'doc_$id' : 'doc_${name.toLowerCase().trim()}';
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is _Doctor &&
-          runtimeType == other.runtimeType &&
-          (id != null && other.id != null
+          (id != null && other.id != null && id! > 0 && other.id! > 0
               ? id == other.id
-              : name == other.name && speciality == other.speciality && phone == other.phone && area == other.area);
+              : name.trim().toLowerCase() == other.name.trim().toLowerCase());
 
   @override
-  int get hashCode => id != null ? id.hashCode : Object.hash(name, speciality, phone, area);
+  int get hashCode => id != null && id! > 0 ? id.hashCode : name.trim().toLowerCase().hashCode;
 }
 
 class _Clinic {
@@ -47,19 +48,18 @@ class _Clinic {
 
   const _Clinic(this.name, this.lat, this.lng, this.address, [this.phone = '', this.id, this.addedBy, this.area = '']);
 
-  String get uniqueKey => id != null ? 'clin_$id' : 'clin_${name}_${lat}_${lng}_$area';
+  String get uniqueKey => id != null && id! > 0 ? 'clin_$id' : 'clin_${name.toLowerCase().trim()}';
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is _Clinic &&
-          runtimeType == other.runtimeType &&
-          (id != null && other.id != null
+          (id != null && other.id != null && id! > 0 && other.id! > 0
               ? id == other.id
-              : name == other.name && lat == other.lat && lng == other.lng && address == other.address && area == other.area);
+              : name.trim().toLowerCase() == other.name.trim().toLowerCase());
 
   @override
-  int get hashCode => id != null ? id.hashCode : Object.hash(name, lat, lng, address, area);
+  int get hashCode => id != null && id! > 0 ? id.hashCode : name.trim().toLowerCase().hashCode;
 }
 
 class _DoctorClinicSuggestion {
@@ -663,12 +663,18 @@ class _TaskScreenState extends State<TaskScreen>
     final phoneCtrl   = TextEditingController();
     final areaCtrl    = TextEditingController();
     final mapUrlCtrl  = TextEditingController();
-    final latCtrl     = TextEditingController();
-    final lngCtrl     = TextEditingController();
     final formKey     = GlobalKey<FormState>();
-    bool  saving      = false;
-    bool  urlParsed   = false;
-    bool  isExtracting= false;
+    final mapCtrl     = MapController();
+
+    bool saving        = false;
+    bool isExtracting  = false;
+    bool isConfirmed   = false;
+    bool isReverseGeocoding = false;
+
+    LatLng? markerLatLng;
+    LatLng? confirmedLatLng;
+    String detectedPlaceName = '';
+    String detectedAddress = '';
 
     await showDialog(
       context: context,
@@ -695,19 +701,11 @@ class _TaskScreenState extends State<TaskScreen>
                     type: TextInputType.phone),
                 const SizedBox(height: 12),
                 _dialogField(areaCtrl, 'Area / Division (e.g. Chennai)', Icons.location_city_rounded),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+
+                // ── Google Maps URL Input & Extract ──
                 TextFormField(
                   controller: mapUrlCtrl,
-                  onChanged: (val) {
-                    final localCoords = MapUrlService.extractCoordinatesFromText(val);
-                    if (localCoords != null) {
-                      setS(() {
-                        latCtrl.text = localCoords['lat']!.toString();
-                        lngCtrl.text = localCoords['lng']!.toString();
-                        urlParsed = true;
-                      });
-                    }
-                  },
                   decoration: InputDecoration(
                     hintText: 'Paste Google Maps URL',
                     prefixIcon: const Icon(Icons.map_rounded, color: Color(0xFF00A86B), size: 20),
@@ -729,53 +727,119 @@ class _TaskScreenState extends State<TaskScreen>
                               }
                               setS(() {
                                 isExtracting = true;
-                                urlParsed = false;
+                                isConfirmed = false;
                               });
 
                               try {
-                                final coords = await MapUrlService.resolveMapUrl(url);
-                                if (coords != null) {
+                                debugPrint('[AddClinicDialog] Original Pasted URL: $url');
+                                final dest = await MapUrlService.resolveLocation(url);
+
+                                if (dest != null) {
+                                  final newLatLng = LatLng(dest.lat, dest.lng);
+                                  final pName = dest.placeName ?? '';
+                                  var pAddr = dest.address ?? '';
+
+                                  debugPrint('Original URL: ${dest.originalUrl}');
+                                  debugPrint('Resolved URL: ${dest.resolvedUrl}');
+                                  debugPrint('Place ID: ${dest.placeId ?? 'N/A'}');
+                                  debugPrint('Extraction method: ${dest.extractionMethod}');
+                                  debugPrint('Final destination: ${pName.isNotEmpty ? pName : (pAddr.isNotEmpty ? pAddr : 'Detected Location')}');
+                                  debugPrint('Final latitude: ${dest.lat}');
+                                  debugPrint('Final longitude: ${dest.lng}');
+
+                                  if (pAddr.isEmpty) {
+                                    pAddr = await MapUrlService.reverseGeocode(dest.lat, dest.lng) ?? '';
+                                  }
+
                                   setS(() {
-                                    latCtrl.text = coords['lat']!.toString();
-                                    lngCtrl.text = coords['lng']!.toString();
-                                    urlParsed = true;
+                                    markerLatLng = newLatLng;
+                                    detectedPlaceName = pName;
+                                    detectedAddress = pAddr;
+                                    isConfirmed = false;
                                     isExtracting = false;
+                                    if (addrCtrl.text.trim().isEmpty && pAddr.isNotEmpty) {
+                                      addrCtrl.text = pAddr;
+                                    }
+                                    if (nameCtrl.text.trim().isEmpty && pName.isNotEmpty) {
+                                      nameCtrl.text = pName;
+                                    }
                                   });
+
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    try {
+                                      mapCtrl.move(newLatLng, 16.0);
+                                    } catch (_) {}
+                                  });
+
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Coordinates extracted: Lat ${latCtrl.text}, Lng ${lngCtrl.text}'),
+                                        content: Text(
+                                          pName.isNotEmpty
+                                              ? 'Destination detected: "$pName". Please verify the pin and confirm.'
+                                              : 'Destination detected. Please verify the pin on the map and confirm.',
+                                        ),
                                         backgroundColor: const Color(0xFF00A86B),
-                                        duration: const Duration(seconds: 3),
+                                        duration: const Duration(seconds: 4),
                                       ),
                                     );
                                   }
                                 } else {
+                                  final fallbackLatLng = (_repLat != null && _repLng != null && _repLat != 0.0)
+                                      ? LatLng(_repLat!, _repLng!)
+                                      : (markerLatLng ?? const LatLng(11.9697, 79.7665));
+
                                   setS(() {
-                                    urlParsed = false;
                                     isExtracting = false;
+                                    if (markerLatLng == null) {
+                                      markerLatLng = fallbackLatLng;
+                                      detectedPlaceName = 'Manual Location Verification';
+                                      detectedAddress = 'Please tap on the map to pinpoint the exact clinic location.';
+                                      isConfirmed = false;
+                                    }
                                   });
+
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    try {
+                                      mapCtrl.move(fallbackLatLng, 15.0);
+                                    } catch (_) {}
+                                  });
+
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('Could not extract coordinates from this URL.\nPlease enter Latitude & Longitude manually below.'),
+                                        content: Text(
+                                          'Exact location could not be identified. Please verify the location on the map.',
+                                        ),
                                         backgroundColor: Colors.orange,
-                                        duration: Duration(seconds: 4),
+                                        duration: Duration(seconds: 5),
                                       ),
                                     );
                                   }
                                 }
-                              } catch (_) {
+                              } catch (e) {
+                                final fallbackLatLng = (_repLat != null && _repLng != null && _repLat != 0.0)
+                                    ? LatLng(_repLat!, _repLng!)
+                                    : (markerLatLng ?? const LatLng(11.9697, 79.7665));
+
                                 setS(() {
-                                  urlParsed = false;
                                   isExtracting = false;
+                                  if (markerLatLng == null) {
+                                    markerLatLng = fallbackLatLng;
+                                    detectedPlaceName = 'Manual Location Verification';
+                                    detectedAddress = 'Please tap on the map to pinpoint the exact clinic location.';
+                                    isConfirmed = false;
+                                  }
                                 });
+
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Could not extract coordinates from this URL.\nPlease enter Latitude & Longitude manually below.'),
+                                      content: Text(
+                                        'Exact location could not be identified. Please verify the location on the map.',
+                                      ),
                                       backgroundColor: Colors.orange,
-                                      duration: Duration(seconds: 4),
+                                      duration: Duration(seconds: 5),
                                     ),
                                   );
                                 }
@@ -787,30 +851,254 @@ class _TaskScreenState extends State<TaskScreen>
                     ),
                   ),
                 ),
-                if (urlParsed) ...[
-                  const SizedBox(height: 6),
+
+                // ── Detected Place Info & Mini-Map Verification Section ──
+                if (markerLatLng != null) ...[
+                  const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(8)),
-                    child: Row(children: [
-                      const Icon(Icons.check_circle_rounded, color: Color(0xFF047857), size: 14),
-                      const SizedBox(width: 6),
-                      Text('Lat: ${latCtrl.text}  Lng: ${lngCtrl.text}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF047857), fontWeight: FontWeight.w600)),
-                    ]),
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isConfirmed ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isConfirmed ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header Status
+                        Row(
+                          children: [
+                            Icon(
+                              isConfirmed ? Icons.verified_rounded : Icons.location_pin,
+                              color: isConfirmed ? const Color(0xFF047857) : const Color(0xFF0284C7),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                isConfirmed ? 'Destination Verified & Confirmed' : 'Verify Detected Destination',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isConfirmed ? const Color(0xFF047857) : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isConfirmed ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isConfirmed ? 'CONFIRMED' : 'NEEDS OK',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isConfirmed ? const Color(0xFF047857) : const Color(0xFFB45309),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (detectedPlaceName.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            detectedPlaceName,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B4332)),
+                          ),
+                        ],
+                        if (detectedAddress.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            detectedAddress,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), height: 1.3),
+                          ),
+                        ],
+                        if (isReverseGeocoding) ...[
+                          const SizedBox(height: 4),
+                          const Row(children: [
+                            SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF00A86B))),
+                            SizedBox(width: 6),
+                            Text('Updating address...', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                          ]),
+                        ],
+
+                        const SizedBox(height: 10),
+
+                        // Mini-Map Preview
+                        Container(
+                          height: 185,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Stack(
+                            children: [
+                              FlutterMap(
+                                mapController: mapCtrl,
+                                options: MapOptions(
+                                  initialCenter: markerLatLng!,
+                                  initialZoom: 16.0,
+                                  minZoom: 4.0,
+                                  maxZoom: 18.0,
+                                  interactionOptions: const InteractionOptions(
+                                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                                  ),
+                                  onTap: (tapPos, point) async {
+                                    setS(() {
+                                      markerLatLng = point;
+                                      isConfirmed = false;
+                                      isReverseGeocoding = true;
+                                    });
+                                    final revAddr = await MapUrlService.reverseGeocode(point.latitude, point.longitude);
+                                    setS(() {
+                                      isReverseGeocoding = false;
+                                      if (revAddr != null && revAddr.isNotEmpty) {
+                                        detectedAddress = revAddr;
+                                        if (addrCtrl.text.trim().isEmpty) {
+                                          addrCtrl.text = revAddr;
+                                        }
+                                      }
+                                    });
+                                  },
+                                ),
+                                children: [
+                                  TileLayer(
+                                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    userAgentPackageName: 'com.medsafe.medsafelifescience',
+                                  ),
+                                  MarkerLayer(
+                                    markers: [
+                                      Marker(
+                                        point: markerLatLng!,
+                                        width: 50,
+                                        height: 50,
+                                        alignment: Alignment.topCenter,
+                                        child: const Icon(
+                                          Icons.location_on_rounded,
+                                          color: Color(0xFFDC2626),
+                                          size: 42,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+
+                              // Map Helper Badges
+                              Positioned(
+                                bottom: 8,
+                                left: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    borderRadius: BorderRadius.circular(6),
+                                    boxShadow: [
+                                      BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4),
+                                    ],
+                                  ),
+                                  child: const Text(
+                                    'Tap map to fine-tune pin',
+                                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Material(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  borderRadius: BorderRadius.circular(8),
+                                  elevation: 2,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(8),
+                                    onTap: () {
+                                      if (markerLatLng != null) {
+                                        mapCtrl.move(markerLatLng!, 16.0);
+                                      }
+                                    },
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(6),
+                                      child: Icon(Icons.center_focus_strong_rounded, size: 18, color: Color(0xFF00A86B)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // OK / Confirm Action Button
+                        if (!isConfirmed) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.check_circle_rounded, size: 17),
+                              label: const Text('Confirm Location (OK)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF00A86B),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                elevation: 0,
+                              ),
+                              onPressed: () {
+                                setS(() {
+                                  isConfirmed = true;
+                                  confirmedLatLng = markerLatLng;
+                                });
+                                debugPrint(
+                                  '[AddClinicDialog] Location confirmed by Sales Rep: Lat ${confirmedLatLng!.latitude}, Lng ${confirmedLatLng!.longitude}',
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Location confirmed! You can now click Save to add the clinic.'),
+                                      backgroundColor: Color(0xFF00A86B),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ] else ...[
+                          Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded, color: Color(0xFF047857), size: 16),
+                              const SizedBox(width: 6),
+                              const Expanded(
+                                child: Text(
+                                  'Location verified and ready to save.',
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF047857), fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () => setS(() => isConfirmed = false),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text('Adjust', style: TextStyle(fontSize: 11, color: Color(0xFF0284C7), fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
-                const SizedBox(height: 10),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Or enter coordinates manually:', style: TextStyle(fontSize: 11, color: Color(0xFF52796F))),
-                ),
-                const SizedBox(height: 6),
-                Row(children: [
-                  Expanded(child: _dialogField(latCtrl, 'Latitude', Icons.south_rounded, type: TextInputType.numberWithOptions(decimal: true, signed: true))),
-                  const SizedBox(width: 8),
-                  Expanded(child: _dialogField(lngCtrl, 'Longitude', Icons.east_rounded, type: TextInputType.numberWithOptions(decimal: true, signed: true))),
-                ]),
               ]),
             ),
           ),
@@ -823,14 +1111,18 @@ class _TaskScreenState extends State<TaskScreen>
               ),
               onPressed: saving ? null : () async {
                 if (!formKey.currentState!.validate()) return;
-                final lat = double.tryParse(latCtrl.text.trim()) ?? 0;
-                final lng = double.tryParse(lngCtrl.text.trim()) ?? 0;
-                if (lat == 0 || lng == 0) {
+                if (!isConfirmed || confirmedLatLng == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please provide valid latitude and longitude.'), backgroundColor: Colors.red),
+                    const SnackBar(
+                      content: Text('Please extract and confirm the Google Maps location before saving.'),
+                      backgroundColor: Colors.orange,
+                    ),
                   );
                   return;
                 }
+                final lat = confirmedLatLng!.latitude;
+                final lng = confirmedLatLng!.longitude;
+                debugPrint('[AddClinicDialog] Saving clinic "${nameCtrl.text.trim()}" with confirmed coords: Lat $lat, Lng $lng');
                 setS(() => saving = true);
                 final enteredArea = areaCtrl.text.trim();
                 try {
@@ -868,7 +1160,6 @@ class _TaskScreenState extends State<TaskScreen>
                         }
                       });
                     }
-                    // Close dialog FIRST, then show snack using screen context
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (mounted) _snack('Clinic "${c.name}" added in area "${c.area.isNotEmpty ? c.area : 'General'}"!');
                   } else {
@@ -907,7 +1198,7 @@ class _TaskScreenState extends State<TaskScreen>
       ),
     );
     nameCtrl.dispose(); addrCtrl.dispose(); phoneCtrl.dispose(); areaCtrl.dispose();
-    mapUrlCtrl.dispose(); latCtrl.dispose(); lngCtrl.dispose();
+    mapUrlCtrl.dispose();
   }
 
   // ── Add New Area / Division dialog ────────────────────────────────────────
@@ -3198,64 +3489,75 @@ class _AreaManagementModalState extends State<_AreaManagementModal> {
                         final docCount = _doctorCountForArea(area);
                         final clinCount = _clinicCountForArea(area);
 
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: isSelected ? const Color(0xFFFEF2F2) : Colors.transparent,
-                            border: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          child: Row(
-                            children: [
-                              Checkbox(
-                                value: isSelected,
-                                onChanged: (val) {
-                                  setState(() {
-                                    if (val == true) {
-                                      _selectedAreas.add(area);
-                                    } else {
-                                      _selectedAreas.remove(area);
-                                    }
-                                  });
-                                },
-                                activeColor: const Color(0xFFDC2626),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(8),
+                        return InkWell(
+                          onTap: () {
+                            setState(() {
+                              if (isSelected) {
+                                _selectedAreas.remove(area);
+                              } else {
+                                _selectedAreas.add(area);
+                              }
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFFFEF2F2) : Colors.transparent,
+                              border: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Row(
+                              children: [
+                                Checkbox(
+                                  value: isSelected,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        _selectedAreas.add(area);
+                                      } else {
+                                        _selectedAreas.remove(area);
+                                      }
+                                    });
+                                  },
+                                  activeColor: const Color(0xFFDC2626),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                 ),
-                                child: const Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF2563EB)),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      area,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF1E293B),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF2563EB)),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        area,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1E293B),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      (docCount == 0 && clinCount == 0)
-                                          ? 'No doctors or clinics registered'
-                                          : [
-                                              if (docCount > 0) '$docCount Doctor${docCount == 1 ? '' : 's'}',
-                                              if (clinCount > 0) '$clinCount Clinic${clinCount == 1 ? '' : 's'}',
-                                            ].join('  •  '),
-                                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        (docCount == 0 && clinCount == 0)
+                                            ? 'No doctors or clinics registered'
+                                            : [
+                                                if (docCount > 0) '$docCount Doctor${docCount == 1 ? '' : 's'}',
+                                                if (clinCount > 0) '$clinCount Clinic${clinCount == 1 ? '' : 's'}',
+                                              ].join('  •  '),
+                                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },

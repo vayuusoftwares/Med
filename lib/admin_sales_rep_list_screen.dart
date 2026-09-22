@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'admin_live_tracking_screen.dart';
 import 'admin_attendance_history_screen.dart';
 import 'admin_task_performance_screen.dart';
@@ -96,6 +97,81 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
   DateTime? _appliedFromDate;
   DateTime? _appliedToDate;
   bool _loadingTasks = false;
+
+  bool _isSameDay(DateTime? d1, DateTime? d2) {
+    if (d1 == null || d2 == null) return false;
+    return d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+  }
+
+  String _getTasksDatePreset() {
+    final from = _appliedFromDate;
+    final to = _appliedToDate;
+    if (from == null && to == null) return 'all';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final dayBefore = today.subtract(const Duration(days: 2));
+
+    if (_isSameDay(from, to)) {
+      if (_isSameDay(from, today)) return 'today';
+      if (_isSameDay(from, yesterday)) return 'yesterday';
+      if (_isSameDay(from, dayBefore)) return 'day_before';
+    }
+    return 'custom';
+  }
+
+  Widget _buildQuickDateChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? _emerald : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? _emerald : const Color(0xFFCBD5E1),
+            width: isSelected ? 1.3 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: _emerald.withValues(alpha: 0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 12,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   List<_SalesRep> get _filteredReps {
     if (_selectedRepFilter == 'All Sales Reps') {
@@ -756,6 +832,91 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
             ],
           ),
           const SizedBox(height: 6),
+
+          // Quick Presets: All, Today, Yesterday, Day Before, Select / Custom
+          () {
+            final activePreset = _getTasksDatePreset();
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final yesterday = today.subtract(const Duration(days: 1));
+            final dayBefore = today.subtract(const Duration(days: 2));
+
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildQuickDateChip(
+                    label: 'All',
+                    isSelected: activePreset == 'all',
+                    icon: Icons.all_inclusive_rounded,
+                    onTap: () {
+                      setState(() {
+                        _mainFromDate = null;
+                        _mainToDate = null;
+                        _appliedFromDate = null;
+                        _appliedToDate = null;
+                      });
+                      _fetchTasks();
+                    },
+                  ),
+                  const SizedBox(width: 5),
+                  _buildQuickDateChip(
+                    label: 'Today',
+                    isSelected: activePreset == 'today',
+                    icon: Icons.today_rounded,
+                    onTap: () {
+                      setState(() {
+                        _mainFromDate = today;
+                        _mainToDate = today;
+                        _appliedFromDate = today;
+                        _appliedToDate = today;
+                      });
+                      _fetchTasks(fromDate: today, toDate: today);
+                    },
+                  ),
+                  const SizedBox(width: 5),
+                  _buildQuickDateChip(
+                    label: 'Yesterday',
+                    isSelected: activePreset == 'yesterday',
+                    icon: Icons.history_rounded,
+                    onTap: () {
+                      setState(() {
+                        _mainFromDate = yesterday;
+                        _mainToDate = yesterday;
+                        _appliedFromDate = yesterday;
+                        _appliedToDate = yesterday;
+                      });
+                      _fetchTasks(fromDate: yesterday, toDate: yesterday);
+                    },
+                  ),
+                  const SizedBox(width: 5),
+                  _buildQuickDateChip(
+                    label: 'Day Before',
+                    isSelected: activePreset == 'day_before',
+                    icon: Icons.event_repeat_rounded,
+                    onTap: () {
+                      setState(() {
+                        _mainFromDate = dayBefore;
+                        _mainToDate = dayBefore;
+                        _appliedFromDate = dayBefore;
+                        _appliedToDate = dayBefore;
+                      });
+                      _fetchTasks(fromDate: dayBefore, toDate: dayBefore);
+                    },
+                  ),
+                  const SizedBox(width: 5),
+                  _buildQuickDateChip(
+                    label: 'Select / Custom',
+                    isSelected: activePreset == 'custom',
+                    icon: Icons.tune_rounded,
+                    onTap: () {},
+                  ),
+                ],
+              ),
+            );
+          }(),
+
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
@@ -801,6 +962,42 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
               _buildApplyFilterButton(),
             ],
           ),
+          if (isFiltered) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.filter_list_rounded, size: 11, color: _emeraldDark),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: () {
+                      final preset = _getTasksDatePreset();
+                      String text;
+                      if (preset == 'today') {
+                        text = 'Filtered: Today (${DateFormat('dd/MM/yyyy').format(_appliedFromDate!)}) • ${_allTasks.length} tasks';
+                      } else if (preset == 'yesterday') {
+                        text = 'Filtered: Yesterday (${DateFormat('dd/MM/yyyy').format(_appliedFromDate!)}) • ${_allTasks.length} tasks';
+                      } else if (preset == 'day_before') {
+                        text = 'Filtered: Day Before (${DateFormat('dd/MM/yyyy').format(_appliedFromDate!)}) • ${_allTasks.length} tasks';
+                      } else {
+                        text = 'Filtered: ${_appliedFromDate != null ? DateFormat('dd/MM/yyyy').format(_appliedFromDate!) : 'Beginning'} to ${_appliedToDate != null ? DateFormat('dd/MM/yyyy').format(_appliedToDate!) : 'Present'} • ${_allTasks.length} task${_allTasks.length == 1 ? '' : 's'}';
+                      }
+                      return Text(
+                        text,
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _emeraldDark),
+                      );
+                    }(),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1242,8 +1439,14 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildBioItem(Icons.phone_outlined, 'Phone',
-                    rep.phone.isNotEmpty ? rep.phone : 'N/A'),
+                child: _buildBioItem(
+                  Icons.phone_outlined,
+                  'Phone',
+                  rep.phone.isNotEmpty ? rep.phone : 'N/A',
+                  onTap: rep.phone.isNotEmpty && rep.phone != 'N/A'
+                      ? () => _launchDialer(context, rep.phone)
+                      : null,
+                ),
               ),
             ],
           ),
@@ -2177,30 +2380,52 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
     );
   }
 
-  Widget _buildBioItem(IconData icon, String label, String value) {
-    return Row(
+  Widget _buildBioItem(IconData icon, String label, String value, {VoidCallback? onTap}) {
+    final content = Row(
       children: [
-        Icon(icon, size: 14, color: _emerald),
+        Icon(icon, size: 14, color: onTap != null ? _emeraldDark : _emerald),
         const SizedBox(width: 6),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style:
-                      const TextStyle(fontSize: 10, color: Color(0xFF52796F))),
+              Row(
+                children: [
+                  Text(label,
+                      style:
+                          const TextStyle(fontSize: 10, color: Color(0xFF52796F))),
+                  if (onTap != null) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.touch_app_rounded, size: 10, color: _emeraldDark),
+                  ],
+                ],
+              ),
               const SizedBox(height: 2),
               Text(value,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: _darkText),
+                      color: onTap != null ? _emeraldDark : _darkText,
+                      decoration: onTap != null ? TextDecoration.underline : TextDecoration.none),
                   overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
       ],
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+          child: content,
+        ),
+      );
+    }
+
+    return content;
   }
 
   String _formatLastSeen(String dt) {
@@ -2235,6 +2460,42 @@ class _AdminSalesRepListScreenState extends State<AdminSalesRepListScreen> {
         ));
       }),
     );
+  }
+}
+
+// ── Top-level phone dialer helper ──────────────────────────────────────────
+
+Future<void> _launchDialer(BuildContext context, String phoneNumber) async {
+  final cleanPhone = phoneNumber.replaceAll(RegExp(r'[^0-9+]'), '');
+  if (cleanPhone.isEmpty) return;
+  final Uri launchUri = Uri(
+    scheme: 'tel',
+    path: cleanPhone,
+  );
+  try {
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+    } else {
+      await launchUrl(launchUri);
+    }
+  } catch (e) {
+    debugPrint('Could not launch phone dialer: $e');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.phone_disabled_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Could not open phone dialer for $phoneNumber')),
+            ],
+          ),
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 }
 
@@ -2361,8 +2622,14 @@ class _RepDetailSheet extends StatelessWidget {
                   Row(children: [
                     Expanded(child: _infoCard(Icons.email_outlined, 'Email', rep.email)),
                     const SizedBox(width: 10),
-                    Expanded(child: _infoCard(Icons.phone_outlined, 'Phone',
-                        rep.phone.isNotEmpty ? rep.phone : 'Not provided')),
+                    Expanded(child: _infoCard(
+                      Icons.phone_outlined,
+                      'Phone',
+                      rep.phone.isNotEmpty ? rep.phone : 'Not provided',
+                      onTap: rep.phone.isNotEmpty && rep.phone != 'Not provided'
+                          ? () => _launchDialer(context, rep.phone)
+                          : null,
+                    )),
                   ]),
                   const SizedBox(height: 16),
 
@@ -2453,8 +2720,8 @@ class _RepDetailSheet extends StatelessWidget {
     ]);
   }
 
-  Widget _infoCard(IconData icon, String label, String value) {
-    return Container(
+  Widget _infoCard(IconData icon, String label, String value, {VoidCallback? onTap}) {
+    final content = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFF0FDF4),
@@ -2465,15 +2732,36 @@ class _RepDetailSheet extends StatelessWidget {
         Icon(icon, size: 14, color: _emerald),
         const SizedBox(width: 8),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label,
-              style: const TextStyle(fontSize: 10, color: Color(0xFF52796F))),
+          Row(
+            children: [
+              Text(label,
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF52796F))),
+              if (onTap != null) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.touch_app_rounded, size: 10, color: _emerald),
+              ],
+            ],
+          ),
           const SizedBox(height: 2),
           Text(value,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w700, color: _darkText),
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: onTap != null ? _emerald : _darkText,
+                  decoration: onTap != null ? TextDecoration.underline : TextDecoration.none),
               overflow: TextOverflow.ellipsis),
         ])),
       ]),
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: content,
+      );
+    }
+
+    return content;
   }
 }

@@ -1,4 +1,6 @@
 <?php
+error_reporting(0);
+ini_set('display_errors', 0);
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
 header("Access-Control-Allow-Headers: *");
@@ -26,9 +28,17 @@ $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : (isset($_POST['user
 $role = isset($_GET['role']) ? trim($_GET['role']) : (isset($_POST['role']) ? trim($_POST['role']) : '');
 
 // Ensure area column exists in tables
-$conn->query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS area VARCHAR(100) NOT NULL DEFAULT ''");
-$conn->query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS area VARCHAR(100) NOT NULL DEFAULT ''");
-$conn->query("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS area VARCHAR(100) NOT NULL DEFAULT ''");
+function ensure_col($conn, $table, $col, $def) {
+  $r = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$col'");
+  if ($r && $r->num_rows == 0) {
+    $conn->query("ALTER TABLE `$table` ADD COLUMN `$col` $def");
+  }
+}
+ensure_col($conn, 'doctors', 'area', "VARCHAR(100) NOT NULL DEFAULT ''");
+ensure_col($conn, 'clinics', 'area', "VARCHAR(100) NOT NULL DEFAULT ''");
+ensure_col($conn, 'tasks', 'area', "VARCHAR(100) NOT NULL DEFAULT ''");
+ensure_col($conn, 'doctors', 'is_deleted', "TINYINT(1) NOT NULL DEFAULT 0");
+ensure_col($conn, 'clinics', 'is_deleted', "TINYINT(1) NOT NULL DEFAULT 0");
 
 // Fetch Doctors (excluding soft-deleted)
 if ($role === 'sales_rep' && $user_id > 0) {

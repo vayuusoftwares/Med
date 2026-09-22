@@ -45,6 +45,21 @@ $deleted_doctor_ids = [];
 $deleted_clinic_ids = [];
 $deleted_area_names = [];
 
+// Ensure columns and tables exist
+function ensure_col($conn, $table, $col, $def) {
+  $r = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$col'");
+  if ($r && $r->num_rows == 0) {
+    $conn->query("ALTER TABLE `$table` ADD COLUMN `$col` $def");
+  }
+}
+ensure_col($conn, 'doctors', 'area', "VARCHAR(100) NOT NULL DEFAULT ''");
+ensure_col($conn, 'doctors', 'is_deleted', "TINYINT(1) NOT NULL DEFAULT 0");
+ensure_col($conn, 'doctors', 'deleted_at', "DATETIME NULL DEFAULT NULL");
+ensure_col($conn, 'clinics', 'area', "VARCHAR(100) NOT NULL DEFAULT ''");
+ensure_col($conn, 'clinics', 'is_deleted', "TINYINT(1) NOT NULL DEFAULT 0");
+ensure_col($conn, 'clinics', 'deleted_at', "DATETIME NULL DEFAULT NULL");
+ensure_col($conn, 'tasks', 'area', "VARCHAR(100) NOT NULL DEFAULT ''");
+
 $conn->begin_transaction();
 
 try {
@@ -55,27 +70,48 @@ try {
       deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )");
 
+  // Ensure areas table exists
+  $conn->query("CREATE TABLE IF NOT EXISTS areas (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      added_by INT UNSIGNED NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )");
+
   // Soft delete / register deleted areas
   if (!empty($area_names)) {
     foreach ($area_names as $aName) {
       $area = trim((string)$aName);
       if ($area === '' || strcasecmp($area, 'All Areas') === 0) continue;
 
+      // 1. Delete from areas table
+      $stmtArea = $conn->prepare("DELETE FROM areas WHERE LOWER(name) = LOWER(?)");
+      $stmtArea->bind_param("s", $area);
+      $stmtArea->execute();
+      $stmtArea->close();
+
+      // 2. Track in deleted_areas table
       $stmt = $conn->prepare("INSERT INTO deleted_areas (area, deleted_at) VALUES (?, NOW()) ON DUPLICATE KEY UPDATE deleted_at = NOW()");
       $stmt->bind_param("s", $area);
       $stmt->execute();
       $stmt->close();
 
-      // Clear area on doctors and clinics with that area
-      $stmtDoc = $conn->prepare("UPDATE doctors SET area = '' WHERE area = ?");
+      // 3. Clear area on doctors and clinics with that area
+      $stmtDoc = $conn->prepare("UPDATE doctors SET area = '' WHERE LOWER(area) = LOWER(?)");
       $stmtDoc->bind_param("s", $area);
       $stmtDoc->execute();
       $stmtDoc->close();
 
-      $stmtClin = $conn->prepare("UPDATE clinics SET area = '' WHERE area = ?");
+      $stmtClin = $conn->prepare("UPDATE clinics SET area = '' WHERE LOWER(area) = LOWER(?)");
       $stmtClin->bind_param("s", $area);
       $stmtClin->execute();
       $stmtClin->close();
+
+      // 4. Clear area on tasks with that area
+      $stmtTask = $conn->prepare("UPDATE tasks SET area = '' WHERE LOWER(area) = LOWER(?)");
+      $stmtTask->bind_param("s", $area);
+      $stmtTask->execute();
+      $stmtTask->close();
 
       $deleted_area_names[] = $area;
     }

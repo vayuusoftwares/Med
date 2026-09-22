@@ -328,7 +328,7 @@ try {
         $doctorName    = $task['doctor_name'] ?? 'Doctor';
         $clinicName    = $task['clinic_name'] ?? 'Clinic';
         $clinicAddress = $task['clinic_address'] ?? '';
-        $compNotes     = "Task #$task_id completed for Dr. $doctorName ($cType checkout, $completionResult, final dist: ${distanceMeters}m)";
+        $compNotes     = "Task #$task_id completed for Dr. $doctorName ($cType checkout, $completionResult, final dist: {$distanceMeters}m)";
 
         $insCompLoc = $conn->prepare("INSERT INTO clinic_location_tracking (task_id, user_id, sales_rep_name, doctor_name, clinic_name, clinic_address, type, lat, lng, notes)
             VALUES (?, ?, ?, ?, ?, ?, 'task_complete', ?, ?, ?)");

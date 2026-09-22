@@ -56,6 +56,7 @@ if ($from_date && $to_date) {
 }
 
 $baseSelect = "SELECT t.*, 
+                      c.map_url AS clinic_map_url,
                       p.assigned_date_time AS p_assigned_dt,
                       p.start_date_time AS p_start_dt,
                       COALESCE(p.deadline_date_time, t.deadline_date_time) AS p_deadline_dt,
@@ -65,6 +66,7 @@ $baseSelect = "SELECT t.*,
                       p.late_by AS p_late_by,
                       p.points_earned AS p_points_earned
                FROM tasks t
+               LEFT JOIN clinics c ON (t.clinic_name = c.name AND (c.is_deleted = 0 OR c.is_deleted IS NULL))
                LEFT JOIN sales_rep_performance p ON t.id = p.task_id";
 
 if ($fetchAll) {
@@ -134,6 +136,7 @@ while ($row = $result->fetch_assoc()) {
         "clinic_lat"                          => (float)($row['clinic_lat'] ?? 0),
         "clinic_lng"                          => (float)($row['clinic_lng'] ?? 0),
         "clinic_address"                      => (string)($row['clinic_address'] ?? ''),
+        "map_url"                             => (string)($row['clinic_map_url'] ?? $row['map_url'] ?? ($row['clinic_lat'] && $row['clinic_lng'] ? "https://maps.google.com/?q={$row['clinic_lat']},{$row['clinic_lng']}" : '')),
         "notes"                               => (string)($row['notes'] ?? ''),
         "status"                              => (string)($row['status'] ?? 'pending'),
         "checkout_type"                       => (string)($row['checkout_type'] ?? ''),

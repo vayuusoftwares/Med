@@ -257,27 +257,114 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
     final repTasks = _getRepTasks();
     switch (_selectedReportType) {
       case AdminReportType.pending:
-        return repTasks.where((t) => (t['status'] ?? 'pending').toString().toLowerCase() != 'completed').toList();
+        final pending = repTasks.where((t) => (t['status'] ?? 'pending').toString().toLowerCase() != 'completed').toList();
+        if (_selectedRepName == 'All Medical Reps' || repTasks.isEmpty) {
+          final unassigned = _getUnassignedRepPlaceholders(pending);
+          return [...pending, ...unassigned];
+        }
+        return pending;
+
       case AdminReportType.completed:
         return repTasks.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'completed').toList();
+
       case AdminReportType.overall:
-        return repTasks;
+        final unassigned = _getUnassignedRepPlaceholders(repTasks);
+        return [...repTasks, ...unassigned];
+
       case AdminReportType.performance:
         final filter = _performanceFilter.toLowerCase();
+        List<Map<String, dynamic>> filtered;
         if (filter == 'green') {
-          return repTasks.where((t) {
+          filtered = repTasks.where((t) {
             final cat = (t['color_category'] ?? '').toString().toLowerCase();
             final status = (t['performance_status'] ?? '').toString().toUpperCase();
             return cat == 'green' || status.contains('GREAT') || status.contains('ON TIME') || status.contains('ON TRACK');
           }).toList();
         } else if (filter == 'red') {
-          return repTasks.where((t) {
+          filtered = repTasks.where((t) {
             final cat = (t['color_category'] ?? '').toString().toLowerCase();
             final status = (t['performance_status'] ?? '').toString().toUpperCase();
             return cat == 'red' || status.contains('BAD') || status.contains('LATE') || status.contains('OVERDUE');
           }).toList();
+        } else {
+          filtered = repTasks;
         }
-        return repTasks;
+        return filtered;
+    }
+  }
+
+  List<Map<String, dynamic>> _getUnassignedRepPlaceholders(List<Map<String, dynamic>> currentTasks) {
+    final List<Map<String, dynamic>> placeholders = [];
+    if (_selectedRepName == 'All Medical Reps' || _selectedRepName == null) {
+      for (final r in _reps) {
+        final rName = (r['name'] ?? '').toString().trim();
+        final rId = (r['id'] as num?)?.toInt();
+        if (rName.isEmpty) continue;
+        final hasTasks = currentTasks.any((t) {
+          final tRepName = (t['sales_rep_name'] ?? '').toString().trim().toLowerCase();
+          final tRepId = (t['user_id'] as num?)?.toInt();
+          return (rId != null && tRepId != null && rId == tRepId) || (rName.toLowerCase() == tRepName);
+        });
+        if (!hasTasks) {
+          placeholders.add({
+            'sales_rep_name': rName,
+            'user_id': rId,
+            'doctor_name': 'No Tasks Assigned Yet',
+            'clinic_name': 'No Tasks Assigned Yet',
+            'clinic_address': '-',
+            'area': '',
+            'task_category': '-',
+            'task_basis': '-',
+            'map_url': '-',
+            'status': 'NOT YET ASSIGNED',
+            'is_unassigned_placeholder': true,
+          });
+        }
+      }
+    } else if (currentTasks.isEmpty && _selectedRepName != null && _selectedRepName != 'All Medical Reps') {
+      placeholders.add({
+        'sales_rep_name': _selectedRepName!,
+        'user_id': _selectedRepId,
+        'doctor_name': 'No Tasks Assigned Yet',
+        'clinic_name': 'No Tasks Assigned Yet',
+        'clinic_address': '-',
+        'area': '',
+        'task_category': '-',
+        'task_basis': '-',
+        'map_url': '-',
+        'status': 'NOT YET ASSIGNED',
+        'is_unassigned_placeholder': true,
+      });
+    }
+    return placeholders;
+  }
+
+  String _extractMapUrl(Map<String, dynamic> t) {
+    final mapUrl = (t['map_url'] ?? t['clinic_map_url'] ?? t['google_maps_url'] ?? t['location_url'] ?? '').toString().trim();
+    if (mapUrl.isNotEmpty && mapUrl != 'null' && mapUrl != '-') {
+      return mapUrl;
+    }
+    final lat = (t['latitude'] ?? t['lat'] ?? '').toString().trim();
+    final lng = (t['longitude'] ?? t['lng'] ?? '').toString().trim();
+    if (lat.isNotEmpty && lng.isNotEmpty && lat != 'null' && lng != 'null' && lat != '0' && lng != '0') {
+      return 'https://maps.google.com/?q=$lat,$lng';
+    }
+    return '-';
+  }
+
+  String _formatStatusDisplay(Map<String, dynamic> t) {
+    if (t['is_unassigned_placeholder'] == true || (t['status'] ?? '').toString().toUpperCase() == 'NOT YET ASSIGNED') {
+      return 'NOT YET ASSIGNED';
+    }
+    final st = (t['status'] ?? 'pending').toString().trim().toLowerCase();
+    if (st == 'completed') {
+      return 'COMPLETED';
+    } else if (st == 'in_progress' || st == 'ongoing') {
+      return 'NOT COMPLETED (IN PROGRESS)';
+    } else if (st == 'pending') {
+      return 'NOT COMPLETED (PENDING)';
+    } else {
+      return 'NOT COMPLETED (${st.toUpperCase()})';
     }
   }
 
@@ -403,7 +490,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'Official MedSafe Life Science Field Performance Document • Single Source of Truth',
+                  'Official MedSafe Life Science Field Performance Document | Single Source of Truth',
                   style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
                 ),
                 pw.Text(
@@ -439,7 +526,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
                       pw.SizedBox(height: 2),
                       if (repData != null) ...[
                         pw.Text(
-                          'Email: ${repData['email'] ?? 'N/A'}  •  Phone: ${repData['phone'] ?? 'N/A'}',
+                          'Email: ${repData['email'] ?? 'N/A'}  |  Phone: ${repData['phone'] ?? 'N/A'}',
                           style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
                         ),
                       ] else ...[
@@ -494,7 +581,13 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
               pw.SizedBox(height: 10),
             ],
 
-            // ── Report Table ──
+            // ── Executive Sales Reps Team Summary Table ──
+            if (_selectedRepName == 'All Medical Reps' || _reps.length > 1) ...[
+              _buildPdfRepTeamSummaryTable(_reps, _getRepTasks()),
+              pw.SizedBox(height: 10),
+            ],
+
+            // ── Detailed Tasks Report Table ──
             _buildPdfTable(reportTasks),
           ];
         },
@@ -502,6 +595,91 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
     );
 
     return pdf;
+  }
+
+  pw.Widget _buildPdfRepTeamSummaryTable(List<dynamic> reps, List<Map<String, dynamic>> allTasksList) {
+    if (reps.isEmpty) return pw.SizedBox();
+
+    final List<List<String>> rows = [];
+    int sNo = 1;
+
+    for (final r in reps) {
+      final name = (r['name'] ?? 'Unknown').toString().trim();
+      final id = (r['id'] as num?)?.toInt();
+      if (name.isEmpty) continue;
+
+      final repTasks = allTasksList.where((t) {
+        if (t['is_unassigned_placeholder'] == true) return false;
+        final tRepName = (t['sales_rep_name'] ?? '').toString().trim().toLowerCase();
+        final tRepId = (t['user_id'] as num?)?.toInt();
+        return (id != null && tRepId != null && id == tRepId) || (name.toLowerCase() == tRepName);
+      }).toList();
+
+      final totalAssigned = repTasks.length;
+      final completed = repTasks.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'completed').length;
+      final notCompleted = totalAssigned - completed;
+      final rate = totalAssigned > 0 ? (completed / totalAssigned * 100.0).toStringAsFixed(1) : '0.0';
+      final assignStatus = totalAssigned == 0 ? 'NOT YET ASSIGNED' : 'ACTIVE ($totalAssigned Tasks)';
+
+      rows.add([
+        '$sNo',
+        name,
+        '$totalAssigned',
+        '$completed',
+        '$notCompleted',
+        '$rate%',
+        assignStatus,
+      ]);
+      sNo++;
+    }
+
+    return pw.Container(
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: const pw.BoxDecoration(
+              color: PdfColors.teal800,
+              borderRadius: pw.BorderRadius.vertical(top: pw.Radius.circular(4)),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'SALES REPRESENTATIVE TEAM SUMMARY (${rows.length} REPS REGISTERED)',
+                  style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                ),
+                pw.Text(
+                  'Includes Assigned & Unassigned Reps',
+                  style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.teal50),
+                ),
+              ],
+            ),
+          ),
+          pw.TableHelper.fromTextArray(
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.teal900),
+            rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
+            oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
+            cellStyle: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey900),
+            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3.5),
+            columnWidths: {
+              0: const pw.FixedColumnWidth(22), // #
+              1: const pw.FlexColumnWidth(2.5), // Sales Rep Name
+              2: const pw.FlexColumnWidth(1.2), // Assigned
+              3: const pw.FlexColumnWidth(1.2), // Completed
+              4: const pw.FlexColumnWidth(1.4), // Not Completed
+              5: const pw.FlexColumnWidth(1.2), // Completion Rate
+              6: const pw.FlexColumnWidth(1.8), // Assignment Status
+            },
+            headers: ['#', 'Sales Rep Name', 'Assigned Tasks', 'Completed', 'Not Completed', 'Completion Rate', 'Assignment Status'],
+            data: rows,
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleViewReport() async {
@@ -526,7 +704,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
       final reportTasks = _getFinalReportTasks();
 
       // 3. Validation: Check if records exist
-      if (reportTasks.isEmpty) {
+      if (reportTasks.isEmpty && _reps.isEmpty) {
         setState(() => _generatingPdf = false);
         _showNoRecordsDialog();
         return;
@@ -561,7 +739,7 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
 
       final fileName = '${sanitizedRep}_$fileTypeSuffix.pdf';
 
-      final totalAllRepTasks = _getRepTasks();
+      final totalAllRepTasks = _getRepTasks().where((t) => t['is_unassigned_placeholder'] != true).toList();
       final totalAssigned = totalAllRepTasks.length;
       final totalCompleted = totalAllRepTasks.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'completed').length;
       final totalPending = totalAssigned - totalCompleted;
@@ -674,33 +852,33 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
         cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3.5),
         columnWidths: {
           0: const pw.FixedColumnWidth(18), // S.No
-          1: const pw.FlexColumnWidth(2.0), // Doctor / Clinic
-          2: const pw.FlexColumnWidth(1.1), // Category
-          3: const pw.FlexColumnWidth(1.2), // Sales Rep
-          4: const pw.FlexColumnWidth(1.1), // Assigned
-          5: const pw.FlexColumnWidth(1.3), // Deadline
-          6: const pw.FlexColumnWidth(1.3), // Completed
-          7: const pw.FlexColumnWidth(1.0), // Duration
-          8: const pw.FlexColumnWidth(1.4), // Performance
-          9: const pw.FlexColumnWidth(1.0), // Late By
+          1: const pw.FlexColumnWidth(1.2), // Sales Rep
+          2: const pw.FlexColumnWidth(1.8), // Doctor / Clinic
+          3: const pw.FlexColumnWidth(1.8), // Map URL
+          4: const pw.FlexColumnWidth(1.0), // Category
+          5: const pw.FlexColumnWidth(1.0), // Assigned
+          6: const pw.FlexColumnWidth(1.1), // Deadline
+          7: const pw.FlexColumnWidth(1.1), // Completed
+          8: const pw.FlexColumnWidth(1.0), // Duration
+          9: const pw.FlexColumnWidth(1.3), // Performance
           10: const pw.FlexColumnWidth(0.8), // Points
         },
-        headers: ['#', 'Doctor / Clinic', 'Category', 'Sales Rep', 'Assigned', 'Deadline', 'Completed', 'Duration', 'Performance', 'Late By', 'Points'],
+        headers: ['#', 'Sales Rep', 'Doctor / Clinic', 'Map URL', 'Category', 'Assigned', 'Deadline', 'Completed', 'Duration', 'Performance', 'Points'],
         data: List.generate(tasks.length, (i) {
           final t = tasks[i];
+          final rep = (t['sales_rep_name'] ?? '-').toString();
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
           final area = (t['area'] ?? '').toString().trim();
-          final category = (t['task_category'] ?? '—').toString();
-          final rep = (t['sales_rep_name'] ?? '—').toString();
+          final mapUrl = _extractMapUrl(t);
+          final category = (t['task_category'] ?? '-').toString();
           final createdAt = (t['created_at'] ?? '').toString();
-          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : (createdAt.isNotEmpty ? createdAt : '-');
 
-          final deadline = (t['deadline_date_time'] ?? t['deadline'] ?? '—').toString();
-          final completedAt = (t['completed_at'] ?? t['checkout_datetime'] ?? t['checked_out_at'] ?? (t['status'] == 'completed' ? 'Completed' : '—')).toString();
-          final duration = (t['total_duration'] ?? '—').toString();
+          final deadline = (t['deadline_date_time'] ?? t['deadline'] ?? '-').toString();
+          final completedAt = (t['completed_at'] ?? t['checkout_datetime'] ?? t['checked_out_at'] ?? (t['status'] == 'completed' ? 'Completed' : '-')).toString();
+          final duration = (t['total_duration'] ?? '-').toString();
           final perfStatus = (t['performance_status'] ?? (t['status'] == 'completed' ? 'ON TIME' : 'PENDING')).toString();
-          final lateBy = (t['late_by'] ?? '—').toString();
           final pts = (t['points_earned'] as num?)?.toInt() ?? 0;
           final ptsStr = pts > 0 ? '+$pts' : (pts < 0 ? '$pts' : '0');
 
@@ -708,15 +886,15 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
 
           return [
             '${i + 1}',
-            docClinicDisplay,
-            category.isNotEmpty ? category : '—',
             rep,
-            assignedDate.isNotEmpty ? assignedDate : '—',
-            deadline.isNotEmpty ? deadline : '—',
-            completedAt.isNotEmpty ? completedAt : '—',
-            duration.isNotEmpty ? duration : '—',
+            docClinicDisplay,
+            mapUrl,
+            category.isNotEmpty ? category : '-',
+            assignedDate,
+            deadline.isNotEmpty ? deadline : '-',
+            completedAt.isNotEmpty ? completedAt : '-',
+            duration.isNotEmpty ? duration : '-',
             perfStatus,
-            lateBy.isNotEmpty ? lateBy : '—',
             ptsStr,
           ];
         }),
@@ -724,81 +902,96 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
     } else if (_selectedReportType == AdminReportType.pending) {
       return pw.TableHelper.fromTextArray(
         border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5, color: PdfColors.white),
+        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.orange800),
         rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
         oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
-        cellStyle: const pw.TextStyle(fontSize: 8, color: PdfColors.grey900),
-        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        cellStyle: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey900),
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3.5),
         columnWidths: {
-          0: const pw.FixedColumnWidth(22), // S.No
-          1: const pw.FlexColumnWidth(2.2), // Doctor & Clinic
-          2: const pw.FlexColumnWidth(2.2), // Address & Details
-          3: const pw.FlexColumnWidth(1.2), // Category
-          4: const pw.FlexColumnWidth(1.0), // Basis
-          5: const pw.FlexColumnWidth(1.3), // Assigned Date
-          6: const pw.FlexColumnWidth(1.0), // Status
+          0: const pw.FixedColumnWidth(18), // S.No
+          1: const pw.FlexColumnWidth(1.4), // Sales Rep
+          2: const pw.FlexColumnWidth(2.0), // Doctor & Clinic
+          3: const pw.FlexColumnWidth(2.0), // Task Map URL / Location
+          4: const pw.FlexColumnWidth(1.8), // Clinic Address / Notes
+          5: const pw.FlexColumnWidth(1.1), // Category & Basis
+          6: const pw.FlexColumnWidth(1.1), // Assigned Date
+          7: const pw.FlexColumnWidth(1.3), // Status
         },
-        headers: ['#', 'Doctor / Clinic', 'Clinic Address / Notes', 'Category', 'Basis', 'Assigned Date', 'Status'],
+        headers: ['#', 'Sales Rep', 'Doctor / Clinic', 'Task Map URL / Location', 'Clinic Address / Notes', 'Category & Basis', 'Assigned Date', 'Status'],
         data: List.generate(tasks.length, (i) {
           final t = tasks[i];
+          final isUnassigned = t['is_unassigned_placeholder'] == true;
+          final rep = (t['sales_rep_name'] ?? '-').toString();
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
           final area = (t['area'] ?? '').toString().trim();
           final addr = (t['clinic_address'] ?? '').toString();
           final notes = (t['notes'] ?? '').toString();
-          final category = (t['task_category'] ?? '—').toString();
+          final mapUrl = _extractMapUrl(t);
+          final category = (t['task_category'] ?? '-').toString();
           final basis = (t['task_basis'] ?? 'Daily').toString();
           final createdAt = (t['created_at'] ?? '').toString();
-          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
-          final status = (t['status'] ?? 'pending').toString().toUpperCase();
+          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : (createdAt.isNotEmpty ? createdAt : '-');
+          final statusDisplay = _formatStatusDisplay(t);
 
-          final addressNote = addr.isNotEmpty && notes.isNotEmpty
-              ? '$addr\nNote: $notes'
-              : (addr.isNotEmpty ? addr : (notes.isNotEmpty ? 'Note: $notes' : '—'));
+          final addressNote = isUnassigned
+              ? '-'
+              : (addr.isNotEmpty && notes.isNotEmpty
+                  ? '$addr\nNote: $notes'
+                  : (addr.isNotEmpty ? addr : (notes.isNotEmpty ? 'Note: $notes' : '-')));
 
-          final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
+          final docClinicDisplay = isUnassigned
+              ? 'No Tasks Assigned Yet'
+              : (area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic');
+          final categoryBasisDisplay = isUnassigned
+              ? '-'
+              : (category.isNotEmpty && category != '-' ? '$category\n($basis)' : basis);
 
           return [
             '${i + 1}',
+            rep,
             docClinicDisplay,
+            mapUrl,
             addressNote,
-            category.isNotEmpty ? category : '—',
-            basis,
-            assignedDate.isNotEmpty ? assignedDate : '—',
-            status,
+            categoryBasisDisplay,
+            isUnassigned ? '-' : assignedDate,
+            statusDisplay,
           ];
         }),
       );
     } else if (_selectedReportType == AdminReportType.completed) {
       return pw.TableHelper.fromTextArray(
         border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5, color: PdfColors.white),
+        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.teal800),
         rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
         oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
-        cellStyle: const pw.TextStyle(fontSize: 8, color: PdfColors.grey900),
-        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        cellStyle: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey900),
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3.5),
         columnWidths: {
-          0: const pw.FixedColumnWidth(22), // S.No
-          1: const pw.FlexColumnWidth(2.0), // Doctor & Clinic
-          2: const pw.FlexColumnWidth(1.2), // Category
-          3: const pw.FlexColumnWidth(1.0), // Basis
-          4: const pw.FlexColumnWidth(1.2), // Assigned Date
-          5: const pw.FlexColumnWidth(1.4), // Completed At
-          6: const pw.FlexColumnWidth(1.0), // Mode
-          7: const pw.FlexColumnWidth(1.0), // Status
+          0: const pw.FixedColumnWidth(18), // S.No
+          1: const pw.FlexColumnWidth(1.4), // Sales Rep
+          2: const pw.FlexColumnWidth(2.0), // Doctor & Clinic
+          3: const pw.FlexColumnWidth(2.0), // Task Map URL / Location
+          4: const pw.FlexColumnWidth(1.1), // Category & Basis
+          5: const pw.FlexColumnWidth(1.1), // Assigned Date
+          6: const pw.FlexColumnWidth(1.2), // Completed Date
+          7: const pw.FlexColumnWidth(1.0), // Checkout Mode
+          8: const pw.FlexColumnWidth(1.0), // Status
         },
-        headers: ['#', 'Doctor / Clinic', 'Category', 'Basis', 'Assigned Date', 'Completed Date', 'Checkout Mode', 'Status'],
+        headers: ['#', 'Sales Rep', 'Doctor / Clinic', 'Task Map URL / Location', 'Category & Basis', 'Assigned Date', 'Completed Date', 'Checkout Mode', 'Status'],
         data: List.generate(tasks.length, (i) {
           final t = tasks[i];
+          final rep = (t['sales_rep_name'] ?? '-').toString();
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
           final area = (t['area'] ?? '').toString().trim();
-          final category = (t['task_category'] ?? '—').toString();
+          final mapUrl = _extractMapUrl(t);
+          final category = (t['task_category'] ?? '-').toString();
           final basis = (t['task_basis'] ?? 'Daily').toString();
           final createdAt = (t['created_at'] ?? '').toString();
-          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : (createdAt.isNotEmpty ? createdAt : '-');
 
           final checkoutDate = (t['checkout_date'] ?? '').toString();
           final checkoutTime = (t['checkout_time'] ?? '').toString();
@@ -815,18 +1008,20 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
           }
 
           final mode = (t['checkout_type'] ?? 'ONLINE').toString().toUpperCase();
-          final status = (t['status'] ?? 'completed').toString().toUpperCase();
+          final statusDisplay = _formatStatusDisplay(t);
           final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
+          final categoryBasisDisplay = category.isNotEmpty && category != '-' ? '$category\n($basis)' : basis;
 
           return [
             '${i + 1}',
+            rep,
             docClinicDisplay,
-            category.isNotEmpty ? category : '—',
-            basis,
-            assignedDate.isNotEmpty ? assignedDate : '—',
+            mapUrl,
+            categoryBasisDisplay,
+            assignedDate,
             compStr,
             mode.isNotEmpty ? mode : 'ONLINE',
-            status,
+            statusDisplay,
           ];
         }),
       );
@@ -834,36 +1029,40 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
       // Overall Report Table
       return pw.TableHelper.fromTextArray(
         border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5, color: PdfColors.white),
+        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey900),
         rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
         oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
-        cellStyle: const pw.TextStyle(fontSize: 8, color: PdfColors.grey900),
-        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        cellStyle: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey900),
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3.5),
         columnWidths: {
-          0: const pw.FixedColumnWidth(22), // S.No
-          1: const pw.FlexColumnWidth(2.0), // Doctor / Clinic
-          2: const pw.FlexColumnWidth(1.2), // Category
-          3: const pw.FlexColumnWidth(1.0), // Basis
-          4: const pw.FlexColumnWidth(1.2), // Assigned Date
-          5: const pw.FlexColumnWidth(1.4), // Completed Date
-          6: const pw.FlexColumnWidth(1.1), // Status
+          0: const pw.FixedColumnWidth(18), // S.No
+          1: const pw.FlexColumnWidth(1.4), // Sales Rep
+          2: const pw.FlexColumnWidth(2.0), // Doctor / Clinic
+          3: const pw.FlexColumnWidth(2.0), // Task Map URL / Location
+          4: const pw.FlexColumnWidth(1.1), // Category & Basis
+          5: const pw.FlexColumnWidth(1.1), // Assigned Date
+          6: const pw.FlexColumnWidth(1.1), // Completed Date
+          7: const pw.FlexColumnWidth(1.3), // Status
         },
-        headers: ['#', 'Doctor / Clinic', 'Category', 'Basis', 'Assigned Date', 'Completed Date', 'Status'],
+        headers: ['#', 'Sales Rep', 'Doctor / Clinic', 'Task Map URL / Location', 'Category & Basis', 'Assigned Date', 'Completed Date', 'Status'],
         data: List.generate(tasks.length, (i) {
           final t = tasks[i];
+          final isUnassigned = t['is_unassigned_placeholder'] == true;
+          final rep = (t['sales_rep_name'] ?? '-').toString();
           final doc = (t['doctor_name'] ?? 'N/A').toString();
           final clinic = (t['clinic_name'] ?? 'N/A').toString();
           final area = (t['area'] ?? '').toString().trim();
-          final category = (t['task_category'] ?? '—').toString();
+          final mapUrl = _extractMapUrl(t);
+          final category = (t['task_category'] ?? '-').toString();
           final basis = (t['task_basis'] ?? 'Daily').toString();
           final createdAt = (t['created_at'] ?? '').toString();
-          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+          final assignedDate = createdAt.length >= 10 ? createdAt.substring(0, 10) : (createdAt.isNotEmpty ? createdAt : '-');
 
           final isDone = (t['status'] ?? '').toString().toLowerCase() == 'completed';
           final checkoutDate = (t['checkout_date'] ?? '').toString();
           final checkoutTime = (t['checkout_time'] ?? '').toString();
-          String compStr = '—';
+          String compStr = '-';
           if (isDone) {
             if (checkoutDate.isNotEmpty && checkoutTime.isNotEmpty) {
               compStr = '$checkoutDate\n$checkoutTime';
@@ -874,17 +1073,23 @@ class _AdminPdfReportsScreenState extends State<AdminPdfReportsScreen> {
             }
           }
 
-          final status = (t['status'] ?? 'pending').toString().toUpperCase();
-          final docClinicDisplay = area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic';
+          final statusDisplay = _formatStatusDisplay(t);
+          final docClinicDisplay = isUnassigned
+              ? 'No Tasks Assigned Yet'
+              : (area.isNotEmpty ? 'Dr. $doc\n$clinic\nArea: $area' : 'Dr. $doc\n$clinic');
+          final categoryBasisDisplay = isUnassigned
+              ? '-'
+              : (category.isNotEmpty && category != '-' ? '$category\n($basis)' : basis);
 
           return [
             '${i + 1}',
+            rep,
             docClinicDisplay,
-            category.isNotEmpty ? category : '—',
-            basis,
-            assignedDate.isNotEmpty ? assignedDate : '—',
+            mapUrl,
+            categoryBasisDisplay,
+            isUnassigned ? '-' : assignedDate,
             compStr,
-            status,
+            statusDisplay,
           ];
         }),
       );
@@ -2318,6 +2523,35 @@ class _AdminReportViewerScreenState extends State<AdminReportViewerScreen> {
 
   bool _isDownloading = false;
   Uint8List? _cachedPdfBytes;
+  final TransformationController _transformationController = TransformationController();
+  double _currentScale = 1.0;
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  void _zoomIn() {
+    setState(() {
+      _currentScale = (_currentScale * 1.25).clamp(0.5, 4.0);
+      _transformationController.value = Matrix4.identity()..scale(_currentScale);
+    });
+  }
+
+  void _zoomOut() {
+    setState(() {
+      _currentScale = (_currentScale / 1.25).clamp(0.5, 4.0);
+      _transformationController.value = Matrix4.identity()..scale(_currentScale);
+    });
+  }
+
+  void _resetZoom() {
+    setState(() {
+      _currentScale = 1.0;
+      _transformationController.value = Matrix4.identity();
+    });
+  }
 
   Future<Uint8List> _getPdfBytes() async {
     if (_cachedPdfBytes != null) return _cachedPdfBytes!;
@@ -2442,7 +2676,7 @@ class _AdminReportViewerScreenState extends State<AdminReportViewerScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Informational View Mode banner
+            // Informational View Mode banner with pinch-to-zoom tip
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: const BoxDecoration(
@@ -2451,11 +2685,11 @@ class _AdminReportViewerScreenState extends State<AdminReportViewerScreen> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.visibility_rounded, size: 16, color: _emeraldDark),
+                  Icon(Icons.zoom_in_rounded, size: 16, color: _emeraldDark),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Report View Mode: Review the document below, then tap Download Report.',
+                      'Pinch with two fingers or use (+ / -) to zoom in & out.',
                       style: TextStyle(fontSize: 11.5, color: Color(0xFF065F46), fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -2463,24 +2697,124 @@ class _AdminReportViewerScreenState extends State<AdminReportViewerScreen> {
               ),
             ),
 
-            // Pdf previewer in view mode
+            // Pdf previewer wrapped with InteractiveViewer and Floating Zoom controls
             Expanded(
-              child: PdfPreview(
-                build: (format) => _getPdfBytes(),
-                allowPrinting: false,
-                allowSharing: false,
-                canChangePageFormat: false,
-                canChangeOrientation: false,
-                canDebug: false,
-                useActions: false,
-                previewPageMargin: const EdgeInsets.all(12),
-                loadingWidget: const Center(
-                  child: CircularProgressIndicator(color: _emeraldPrimary),
-                ),
-                scrollViewDecoration: const BoxDecoration(
-                  color: Color(0xFFF1F5F9),
-                ),
-                pdfFileName: widget.fileName,
+              child: Stack(
+                children: [
+                  InteractiveViewer(
+                    transformationController: _transformationController,
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    boundaryMargin: const EdgeInsets.all(40),
+                    onInteractionEnd: (_) {
+                      final scale = _transformationController.value.getMaxScaleOnAxis();
+                      if (mounted) {
+                        setState(() => _currentScale = scale);
+                      }
+                    },
+                    child: PdfPreview(
+                      build: (format) => _getPdfBytes(),
+                      allowPrinting: false,
+                      allowSharing: false,
+                      canChangePageFormat: false,
+                      canChangeOrientation: false,
+                      canDebug: false,
+                      useActions: false,
+                      previewPageMargin: const EdgeInsets.all(12),
+                      loadingWidget: const Center(
+                        child: CircularProgressIndicator(color: _emeraldPrimary),
+                      ),
+                      scrollViewDecoration: const BoxDecoration(
+                        color: Color(0xFFF1F5F9),
+                      ),
+                      pdfFileName: widget.fileName,
+                    ),
+                  ),
+
+                  // Floating Quick Zoom Toolbar (+, -, Reset, % badge)
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Zoom Out
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: _zoomOut,
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(Icons.remove_rounded, size: 20, color: _darkText),
+                              ),
+                            ),
+                          ),
+                          // Zoom percentage
+                          GestureDetector(
+                            onTap: _resetZoom,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${(_currentScale * 100).toInt()}%',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Zoom In
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: _zoomIn,
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(Icons.add_rounded, size: 20, color: _darkText),
+                              ),
+                            ),
+                          ),
+                          if (_currentScale < 0.98 || _currentScale > 1.02) ...[
+                            Container(width: 1, height: 16, color: const Color(0xFFCBD5E1), margin: const EdgeInsets.symmetric(horizontal: 2)),
+                            // Reset
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: _resetZoom,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(Icons.restart_alt_rounded, size: 18, color: _emeraldDark),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 

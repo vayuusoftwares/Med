@@ -12,13 +12,29 @@ date_default_timezone_set('Asia/Kolkata');
 function ensure_performance_schema($conn) {
     if (!$conn) return;
 
-    // 1. Ensure tasks table has deadline, start, and timing columns
+    // 1. Ensure tasks table has deadline, start, timing, and destination tracking columns
     $taskCols = [
-        'start_date_time'    => "DATETIME NULL",
-        'end_date_time'      => "DATETIME NULL",
-        'started_at'         => "DATETIME NULL",
-        'assigned_at'        => "DATETIME NULL DEFAULT CURRENT_TIMESTAMP",
-        'deadline_date_time' => "DATETIME NULL"
+        'start_date_time'                     => "DATETIME NULL",
+        'end_date_time'                       => "DATETIME NULL",
+        'started_at'                          => "DATETIME NULL",
+        'assigned_at'                         => "DATETIME NULL DEFAULT CURRENT_TIMESTAMP",
+        'deadline_date_time'                  => "DATETIME NULL",
+        'target_deadline_at'                  => "DATETIME NULL",
+        'target_duration_seconds'             => "INT NOT NULL DEFAULT 300",
+        'destination_reached_at'              => "DATETIME NULL",
+        'is_inside_destination'               => "TINYINT(1) NOT NULL DEFAULT 0",
+        'time_inside_destination_seconds'     => "INT NOT NULL DEFAULT 0",
+        'last_destination_distance_meters'    => "DOUBLE NULL",
+        'destination_reached_lat'             => "DOUBLE NULL",
+        'destination_reached_lng'             => "DOUBLE NULL",
+        'destination_reached_distance_meters' => "DOUBLE NULL",
+        'final_distance_meters'               => "DOUBLE NULL",
+        'final_lat'                           => "DOUBLE NULL",
+        'final_lng'                           => "DOUBLE NULL",
+        'completion_result'                 => "VARCHAR(50) NULL DEFAULT 'within_target'",
+        'overtime_duration_seconds'           => "INT NOT NULL DEFAULT 0",
+        'overtime_reason'                     => "TEXT NULL",
+        'overtime_started_at'                 => "DATETIME NULL"
     ];
     foreach ($taskCols as $col => $def) {
         $r = $conn->query("SHOW COLUMNS FROM tasks LIKE '$col'");

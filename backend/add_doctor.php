@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 error_reporting(0);
 ini_set('display_errors', 0);
 header("Access-Control-Allow-Origin: *");
@@ -14,7 +14,14 @@ if ($conn->connect_error) {
     exit;
 }
 
-$conn->query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS area VARCHAR(100) NOT NULL DEFAULT ''");
+$r = $conn->query("SHOW COLUMNS FROM `doctors` LIKE 'area'");
+if ($r && $r->num_rows == 0) {
+    $conn->query("ALTER TABLE `doctors` ADD COLUMN `area` VARCHAR(100) NOT NULL DEFAULT ''");
+}
+$rDel = $conn->query("SHOW COLUMNS FROM `doctors` LIKE 'is_deleted'");
+if ($rDel && $rDel->num_rows == 0) {
+    $conn->query("ALTER TABLE `doctors` ADD COLUMN `is_deleted` TINYINT(1) NOT NULL DEFAULT 0");
+}
 
 $data = json_decode(file_get_contents("php://input"), true);
 $name = trim($data['name'] ?? '');

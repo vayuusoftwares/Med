@@ -49,6 +49,25 @@ function parse_dms($text) {
     return null;
 }
 
+function extract_place_id($text) {
+    if (empty($text)) return null;
+    if (preg_match('/placeid[=\\\u003d]+([a-zA-Z0-9_\-]+)/', $text, $m)) return $m[1];
+    if (preg_match('/!1s(0x[0-9a-fA-F]+:0x[0-9a-fA-F]+)/', $text, $m)) return $m[1];
+    if (preg_match('/[?&]place_id=([a-zA-Z0-9_\-]+)/', $text, $m)) return $m[1];
+    return null;
+}
+
+function extract_place_name_from_url($url) {
+    if (empty($url)) return null;
+    if (preg_match('#/maps/place/([^/@?]+)#', $url, $m)) {
+        $name = urldecode(str_replace('+', ' ', $m[1]));
+        if (!preg_match('/^-?\d+\.\d+,-?\d+\.\d+$/', $name)) {
+            return $name;
+        }
+    }
+    return null;
+}
+
 function extract_coords_from_text($text) {
     if (empty($text)) return null;
 
@@ -94,7 +113,7 @@ function extract_coords_from_text($text) {
                 return ["lat" => $lat, "lng" => $lng, "source" => "google_maps_destination"];
             }
         }
-        if (preg_match('/[?&](?:q|query|loc|ll|saddr)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)/i', $t, $matches)) {
+        if (preg_match('/[?&](?:q|query|loc|ll)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)/i', $t, $matches)) {
             $lat = (float)$matches[1];
             $lng = (float)$matches[2];
             if (is_valid_lat_lng($lat, $lng)) {
@@ -122,17 +141,7 @@ function extract_coords_from_text($text) {
         $dms = parse_dms($t);
         if ($dms !== null) return $dms;
 
-        // 5. PRIORITY 5: HTML Meta Tags & Markers (Static map markers, Schema.org, JSON-LD, ICBM)
-        if (preg_match('/markers=([^&"\']+)/i', $t, $mParam)) {
-            if (preg_match_all('/(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/i', $mParam[1], $allCoords, PREG_SET_ORDER)) {
-                $lastMatch = end($allCoords);
-                $lat = (float)$lastMatch[1];
-                $lng = (float)$lastMatch[2];
-                if (is_valid_lat_lng($lat, $lng)) {
-                    return ["lat" => $lat, "lng" => $lng, "source" => "google_maps_marker"];
-                }
-            }
-        }
+        // 5. PRIORITY 5: HTML Meta Tags (Schema.org / JSON-LD)
         if (preg_match('/itemprop=["\']latitude["\'][^>]*content=["\'](-?\d+\.\d+)["\']/i', $t, $mLat) &&
             preg_match('/itemprop=["\']longitude["\'][^>]*content=["\'](-?\d+\.\d+)["\']/i', $t, $mLng)) {
             $lat = (float)$mLat[1];
@@ -149,31 +158,8 @@ function extract_coords_from_text($text) {
                 return ["lat" => $lat, "lng" => $lng, "source" => "json_ld"];
             }
         }
-        if (preg_match('/\[null,null,(-?\d+\.\d{3,}),(-?\d+\.\d{3,})\]/', $t, $matches)) {
-            $lat = (float)$matches[1];
-            $lng = (float)$matches[2];
-            if (is_valid_lat_lng($lat, $lng)) {
-                return ["lat" => $lat, "lng" => $lng, "source" => "app_init_array"];
-            }
-        }
 
-        // 6. PRIORITY 6: Viewport / Camera Coordinates (@lat,lng)
-        if (preg_match('/@(-?\d+\.\d+),(-?\d+\.\d+)/', $t, $matches)) {
-            $lat = (float)$matches[1];
-            $lng = (float)$matches[2];
-            if (is_valid_lat_lng($lat, $lng)) {
-                return ["lat" => $lat, "lng" => $lng, "source" => "google_maps_viewport"];
-            }
-        }
-        if (preg_match('/staticmap\?[^"]*center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/i', $t, $matches)) {
-            $lat = (float)$matches[1];
-            $lng = (float)$matches[2];
-            if (is_valid_lat_lng($lat, $lng)) {
-                return ["lat" => $lat, "lng" => $lng, "source" => "staticmap_center"];
-            }
-        }
-
-        // 7. PRIORITY 7: Plain coordinate text
+        // 6. PRIORITY 6: Plain coordinate text (e.g. "13.0827, 80.2707")
         if (preg_match('/^\s*\(?\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\)?\s*$/', $t, $matches)) {
             $lat = (float)$matches[1];
             $lng = (float)$matches[2];
@@ -186,64 +172,143 @@ function extract_coords_from_text($text) {
     return null;
 }
 
-// Step 1: Direct extraction on provided URL
+// Step 1: Direct extraction on provided URL / text
 $result = extract_coords_from_text($url);
 if ($result !== null) {
+    $result["place_id"] = extract_place_id($url);
+    $result["place_name"] = extract_place_name_from_url($url);
     echo json_encode(array_merge(["success" => true], $result));
     exit;
 }
 
-// Step 2: Follow redirects with cURL if shortlink or maps link
+// Step 2: Resolve shortlinks or Maps URLs safely via cURL
 if (function_exists('curl_init')) {
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
+    curl_setopt($ch, CURLOPT_TIMEOUT, 12);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     $body = curl_exec($ch);
     $effectiveUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     curl_close($ch);
 
+    // Check effective resolved URL for explicit destination
     if (!empty($effectiveUrl)) {
         $resUrl = extract_coords_from_text($effectiveUrl);
         if ($resUrl !== null) {
-            echo json_encode(array_merge(["success" => true], $resUrl));
+            $resUrl["place_id"] = extract_place_id($effectiveUrl) ?? extract_place_id($body);
+            $resUrl["place_name"] = extract_place_name_from_url($effectiveUrl);
+            echo json_encode(array_merge(["success" => true, "resolved_url" => $effectiveUrl], $resUrl));
             exit;
         }
     }
 
     if (!empty($body)) {
-        // Check og:url and canonical link in HTML
-        if (preg_match('/<meta\s+property=["\']og:url["\']\s+content=["\']([^"\']+)["\']/i', $body, $mOg)) {
-            $resOg = extract_coords_from_text($mOg[1]);
-            if ($resOg !== null) {
-                echo json_encode(array_merge(["success" => true], $resOg));
-                exit;
+        // Priority A: Google Maps Place Preview Link in HTML
+        if (preg_match('/<link\s+href="(\/maps\/preview\/place[^"]+)"/i', $body, $mPlaceLink)) {
+            $previewUrl = "https://www.google.com" . html_entity_decode($mPlaceLink[1]);
+            $ch2 = curl_init($previewUrl);
+            curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch2, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, 0);
+            curl_setopt($ch2, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            $previewBody = curl_exec($ch2);
+            curl_close($ch2);
+
+            if (!empty($previewBody)) {
+                $jsonStr = substr(trim($previewBody), 4);
+                $placeData = json_decode($jsonStr, true);
+
+                $lat = null;
+                $lng = null;
+                $placeId = null;
+                $placeName = "";
+                $address = "";
+
+                // Extract Place ID
+                if (preg_match('/placeid[=\\\u003d]+([a-zA-Z0-9_\-]+)/', $previewBody, $mId)) {
+                    $placeId = $mId[1];
+                } elseif (preg_match('/!1s(0x[0-9a-fA-F]+:0x[0-9a-fA-F]+)/', $effectiveUrl, $mHex)) {
+                    $placeId = $mHex[1];
+                }
+
+                if (isset($placeData[4][0][2]) && isset($placeData[4][0][1])) {
+                    $lat = (float)$placeData[4][0][2];
+                    $lng = (float)$placeData[4][0][1];
+                } elseif (preg_match('/\[null,null,(-?\d+\.\d{4,}),(-?\d+\.\d{4,})\]/', $previewBody, $mCoords)) {
+                    $lat = (float)$mCoords[1];
+                    $lng = (float)$mCoords[2];
+                }
+
+                if (isset($placeData[6][11]) && is_string($placeData[6][11])) {
+                    $placeName = $placeData[6][11];
+                }
+                if (isset($placeData[6][2]) && is_array($placeData[6][2])) {
+                    $address = implode(", ", array_filter($placeData[6][2]));
+                }
+
+                if ($lat !== null && $lng !== null && is_valid_lat_lng($lat, $lng)) {
+                    echo json_encode([
+                        "success" => true,
+                        "lat" => $lat,
+                        "lng" => $lng,
+                        "place_id" => $placeId,
+                        "place_name" => $placeName,
+                        "address" => $address,
+                        "source" => "google_maps_place_preview",
+                        "resolved_url" => $effectiveUrl
+                    ]);
+                    exit;
+                }
             }
         }
+
+        // Priority B: Check canonical or og:url
         if (preg_match('/<link\s+rel=["\']canonical["\']\s+href=["\']([^"\']+)["\']/i', $body, $mCanon)) {
             $resCanon = extract_coords_from_text($mCanon[1]);
             if ($resCanon !== null) {
-                echo json_encode(array_merge(["success" => true], $resCanon));
+                $resCanon["place_id"] = extract_place_id($mCanon[1]) ?? extract_place_id($effectiveUrl);
+                $resCanon["place_name"] = extract_place_name_from_url($mCanon[1]);
+                echo json_encode(array_merge(["success" => true, "resolved_url" => $mCanon[1]], $resCanon));
                 exit;
             }
         }
-        if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']/i', $body, $mImg)) {
-            $resImg = extract_coords_from_text($mImg[1]);
-            if ($resImg !== null) {
-                echo json_encode(array_merge(["success" => true], $resImg));
+        if (preg_match('/<meta\s+property=["\']og:url["\']\s+content=["\']([^"\']+)["\']/i', $body, $mOg)) {
+            $resOg = extract_coords_from_text($mOg[1]);
+            if ($resOg !== null) {
+                $resOg["place_id"] = extract_place_id($mOg[1]) ?? extract_place_id($effectiveUrl);
+                $resOg["place_name"] = extract_place_name_from_url($mOg[1]);
+                echo json_encode(array_merge(["success" => true, "resolved_url" => $mOg[1]], $resOg));
                 exit;
             }
         }
 
-        $resBody = extract_coords_from_text($body);
-        if ($resBody !== null) {
-            echo json_encode(array_merge(["success" => true], $resBody));
-            exit;
+        // Priority C: Explicit place geometry array [null,null,lat,lng] in body (NOT viewport)
+        if (preg_match('/\[null,null,(-?\d+\.\d{4,}),(-?\d+\.\d{4,})\]/', $body, $matches)) {
+            $lat = (float)$matches[1];
+            $lng = (float)$matches[2];
+            if (is_valid_lat_lng($lat, $lng)) {
+                echo json_encode([
+                    "success" => true,
+                    "lat" => $lat,
+                    "lng" => $lng,
+                    "place_id" => extract_place_id($effectiveUrl) ?? extract_place_id($body),
+                    "place_name" => extract_place_name_from_url($effectiveUrl),
+                    "source" => "app_init_array",
+                    "resolved_url" => $effectiveUrl
+                ]);
+                exit;
+            }
         }
     }
 }
 
-echo json_encode(["success" => false, "message" => "Coordinates not found in URL."]);
+echo json_encode([
+    "success" => false,
+    "message" => "Unable to identify the exact Google Maps destination. Please open the location in Google Maps and copy the location link again."
+]);
 ?>

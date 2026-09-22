@@ -5,6 +5,37 @@ import 'package:http/http.dart' as http;
 import '../app_config.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
+/// ExtractedMapDestination — Detailed Google Maps Destination Information
+/// ─────────────────────────────────────────────────────────────────────────────
+class ExtractedMapDestination {
+  final double lat;
+  final double lng;
+  final String? placeName;
+  final String? address;
+  final String? placeId;
+  final String extractionMethod;
+  final String originalUrl;
+  final String resolvedUrl;
+
+  const ExtractedMapDestination({
+    required this.lat,
+    required this.lng,
+    this.placeName,
+    this.address,
+    this.placeId,
+    required this.extractionMethod,
+    required this.originalUrl,
+    required this.resolvedUrl,
+  });
+
+  Map<String, double> toLatLngMap() => {'lat': lat, 'lng': lng};
+
+  @override
+  String toString() =>
+      'ExtractedMapDestination(lat: $lat, lng: $lng, placeName: $placeName, address: $address, placeId: $placeId, method: $extractionMethod)';
+}
+
+/// ─────────────────────────────────────────────────────────────────────────────
 /// MapUrlService — Resilient Google Maps URL & Coordinate Extraction Service
 /// ─────────────────────────────────────────────────────────────────────────────
 class MapUrlService {
@@ -14,9 +45,10 @@ class MapUrlService {
   /// 2. Explicit Path / Query / Destination parameters (destination=, daddr=, q=, query=, loc=, ll=, /place/<lat>,<lng>)
   /// 3. geo: URI scheme (geo:lat,lng)
   /// 4. Degrees Minutes Seconds (DMS) format (e.g. 13°04'57.7"N 80°16'14.5"E)
-  /// 5. Embedded HTML Markers / JSON-LD / Place geometry arrays (markers=, itemprop=, JSON-LD, [null,null,lat,lng])
-  /// 6. Viewport / Camera Coordinates (@lat,lng or staticmap center)
-  /// 7. Plain coordinate text format ("13.0827, 80.2707")
+  /// 5. Embedded HTML Markers / JSON-LD / Place geometry arrays (itemprop=, JSON-LD)
+  /// 6. Plain coordinate text format ("13.0827, 80.2707")
+  ///
+  /// STRICT RULE: NEVER extracts map viewport / camera coordinates (@lat,lng or staticmap center).
   static Map<String, double>? extractCoordinatesFromText(String rawText) {
     if (rawText.trim().isEmpty) return null;
 
@@ -69,7 +101,7 @@ class MapUrlService {
 
       // Handles q=loc:lat,lng or q=lat,lng, query=lat,lng, loc=lat,lng, ll=lat,lng
       final queryParamMatch = RegExp(
-        r'[?&](?:q|query|loc|ll|saddr)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)',
+        r'[?&](?:q|query|loc|ll)=(?:loc:)?(-?\d+\.\d+)[,+](-?\d+\.\d+)',
         caseSensitive: false,
       ).firstMatch(text);
       if (queryParamMatch != null) {
@@ -96,19 +128,7 @@ class MapUrlService {
       final dmsCoords = _parseDms(text);
       if (dmsCoords != null) return dmsCoords;
 
-      // 5. PRIORITY 5: Embedded Static Map Markers, JSON-LD, & Place arrays
-      final markerParamMatch = RegExp(r'markers=([^&"'"'"']+)', caseSensitive: false).firstMatch(text);
-      if (markerParamMatch != null) {
-        final markerVal = markerParamMatch.group(1)!;
-        final markerCoords = RegExp(r'(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)').allMatches(markerVal);
-        if (markerCoords.isNotEmpty) {
-          final lastCoord = markerCoords.last;
-          final coords = _validateCoords(lastCoord.group(1), lastCoord.group(2));
-          if (coords != null) return coords;
-        }
-      }
-
-      // Schema.org / OpenGraph meta tags
+      // 5. PRIORITY 5: Schema.org / JSON-LD meta tags
       final metaLat = RegExp(r'itemprop=["\x27]latitude["\x27][^>]*content=["\x27](-?\d+\.\d+)["\x27]', caseSensitive: false).firstMatch(text);
       final metaLng = RegExp(r'itemprop=["\x27]longitude["\x27][^>]*content=["\x27](-?\d+\.\d+)["\x27]', caseSensitive: false).firstMatch(text);
       if (metaLat != null && metaLng != null) {
@@ -116,7 +136,6 @@ class MapUrlService {
         if (coords != null) return coords;
       }
 
-      // JSON-LD "latitude": 13.0827, "longitude": 80.2707
       final jsonLdLat = RegExp(r'"latitude"\s*:\s*"?(-?\d+\.\d+)"?', caseSensitive: false).firstMatch(text);
       final jsonLdLng = RegExp(r'"longitude"\s*:\s*"?(-?\d+\.\d+)"?', caseSensitive: false).firstMatch(text);
       if (jsonLdLat != null && jsonLdLng != null) {
@@ -124,49 +143,10 @@ class MapUrlService {
         if (coords != null) return coords;
       }
 
-      // ICBM or geo.position meta tags
-      final geoPos = RegExp(r'<meta[^>]*content=["\x27](-?\d+\.\d+)[,;\s]+(-?\d+\.\d+)["\x27][^>]*(?:name|property)=["\x27](?:geo\.position|ICBM)["\x27]', caseSensitive: false).firstMatch(text) ??
-          RegExp(r'<meta[^>]*(?:name|property)=["\x27](?:geo\.position|ICBM)["\x27][^>]*content=["\x27](-?\d+\.\d+)[,;\s]+(-?\d+\.\d+)["\x27]', caseSensitive: false).firstMatch(text);
-      if (geoPos != null) {
-        final coords = _validateCoords(geoPos.group(1), geoPos.group(2));
-        if (coords != null) return coords;
-      }
-
-      // Place geometry array: [null,null,lat,lng]
-      final jsonArrayMatch = RegExp(r'\[null,null,(-?\d+\.\d{3,}),(-?\d+\.\d{3,})\]').firstMatch(text);
-      if (jsonArrayMatch != null) {
-        final coords = _validateCoords(jsonArrayMatch.group(1), jsonArrayMatch.group(2));
-        if (coords != null) return coords;
-      }
-
-      // 6. PRIORITY 6: Viewport / Camera Coordinates (@lat,lng) - only when no pin was found
-      final atMatch = RegExp(r'@(-?\d+\.\d+),(-?\d+\.\d+)').firstMatch(text);
-      if (atMatch != null) {
-        final coords = _validateCoords(atMatch.group(1), atMatch.group(2));
-        if (coords != null) return coords;
-      }
-
-      // Static map center fallback (only if no marker was found)
-      final staticMapCenterMatch = RegExp(
-        r'staticmap\?[^"]*center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)',
-        caseSensitive: false,
-      ).firstMatch(text);
-      if (staticMapCenterMatch != null) {
-        final coords = _validateCoords(staticMapCenterMatch.group(1), staticMapCenterMatch.group(2));
-        if (coords != null) return coords;
-      }
-
-      // 7. PRIORITY 7: Plain coordinate string (e.g. "13.0827, 80.2707" or "(13.0827, 80.2707)")
+      // 6. PRIORITY 6: Plain coordinate string (e.g. "13.0827, 80.2707" or "(13.0827, 80.2707)")
       final plainMatch = RegExp(r'^\s*\(?\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\)?\s*$').firstMatch(text);
       if (plainMatch != null) {
         final coords = _validateCoords(plainMatch.group(1), plainMatch.group(2));
-        if (coords != null) return coords;
-      }
-
-      // Generic lat,lng embedded in text (with at least 4 decimal places)
-      final genericMatch = RegExp(r'(-?\d{1,3}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})').firstMatch(text);
-      if (genericMatch != null) {
-        final coords = _validateCoords(genericMatch.group(1), genericMatch.group(2));
         if (coords != null) return coords;
       }
     }
@@ -206,24 +186,39 @@ class MapUrlService {
     return null;
   }
 
-  /// Resolves any Google Maps URL, shortlink (maps.app.goo.gl, goo.gl), or coordinate text.
-  /// First tries instant regex extraction, then follows HTTP redirects on-device, then queries backend fallback.
-  static Future<Map<String, double>?> resolveMapUrl(
+  /// Resolves any Google Maps URL or short link into an [ExtractedMapDestination]
+  /// with exact destination coordinates, place name, and address.
+  static Future<ExtractedMapDestination?> resolveLocation(
     String rawInput, {
-    Duration timeout = const Duration(seconds: 8),
+    Duration timeout = const Duration(seconds: 12),
     bool tryBackend = true,
   }) async {
     final input = rawInput.trim();
     if (input.isEmpty) return null;
 
-    // Step 1: Instant local parsing (no network required)
+    debugPrint('[MapUrlService] Resolving location from input URL: $input');
+
+    // Step 1: Instant local parsing on input text if already contains coordinates
     final localResult = extractCoordinatesFromText(input);
     if (localResult != null) {
-      debugPrint('[MapUrlService] Coordinates parsed locally: $localResult');
-      return localResult;
+      final lat = localResult['lat']!;
+      final lng = localResult['lng']!;
+      debugPrint('[MapUrlService] Coordinates parsed directly from input: {lat: $lat, lng: $lng}');
+      final address = await reverseGeocode(lat, lng);
+      final dest = ExtractedMapDestination(
+        lat: lat,
+        lng: lng,
+        address: address,
+        placeId: _extractPlaceId(input),
+        extractionMethod: 'direct_coordinate_input',
+        originalUrl: input,
+        resolvedUrl: input,
+      );
+      _logResolution(dest);
+      return dest;
     }
 
-    // If input is not a URL, nothing more to resolve
+    // Step 2: Validate and format URL
     var uri = Uri.tryParse(input);
     if (uri == null || (!input.startsWith('http://') && !input.startsWith('https://'))) {
       if (input.startsWith('maps.app.goo.gl/') || input.startsWith('goo.gl/maps/')) {
@@ -233,7 +228,9 @@ class MapUrlService {
       }
     }
 
-    // Step 2: On-device redirect resolution via HTTP GET
+    String finalResolvedUrl = input;
+
+    // Step 3: On-device redirect resolution & Google Place preview parsing
     if (uri != null) {
       try {
         final client = http.Client();
@@ -243,71 +240,161 @@ class MapUrlService {
             ..maxRedirects = 10
             ..headers.addAll({
               'User-Agent':
-                  'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
               'Accept':
-                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.9',
             });
 
           final streamedRes = await client.send(request).timeout(timeout);
           final res = await http.Response.fromStream(streamedRes);
 
-          // Check final resolved URL
-          final finalUrl = streamedRes.request?.url.toString() ?? '';
-          if (finalUrl.isNotEmpty) {
-            final coordsFromFinalUrl = extractCoordinatesFromText(finalUrl);
-            if (coordsFromFinalUrl != null) {
-              debugPrint('[MapUrlService] Coordinates resolved from final URL: $coordsFromFinalUrl');
-              return coordsFromFinalUrl;
-            }
-          }
+          finalResolvedUrl = streamedRes.request?.url.toString() ?? input;
+          debugPrint('[MapUrlService] Resolved URL: $finalResolvedUrl');
 
-          // Check redirect location header if present
-          final locationHeader = res.headers['location'];
-          if (locationHeader != null && locationHeader.isNotEmpty) {
-            final coordsFromLocation = extractCoordinatesFromText(locationHeader);
-            if (coordsFromLocation != null) {
-              debugPrint('[MapUrlService] Coordinates resolved from Location header: $coordsFromLocation');
-              return coordsFromLocation;
-            }
+          // Check if resolved final URL contains explicit coordinates
+          final coordsFromFinalUrl = extractCoordinatesFromText(finalResolvedUrl);
+          if (coordsFromFinalUrl != null) {
+            final lat = coordsFromFinalUrl['lat']!;
+            final lng = coordsFromFinalUrl['lng']!;
+            debugPrint('[MapUrlService] Destination coordinates extracted from final URL: {lat: $lat, lng: $lng}');
+            final address = await reverseGeocode(lat, lng);
+            final dest = ExtractedMapDestination(
+              lat: lat,
+              lng: lng,
+              address: address,
+              placeId: _extractPlaceId(finalResolvedUrl) ?? _extractPlaceId(input),
+              extractionMethod: 'resolved_url_destination',
+              originalUrl: input,
+              resolvedUrl: finalResolvedUrl,
+            );
+            _logResolution(dest);
+            return dest;
           }
 
           // Check response body HTML
           if (res.body.isNotEmpty) {
-            // Check OpenGraph URL / Canonical Link
-            final ogUrlMatch = RegExp(r'<meta\s+property=["\x27]og:url["\x27]\s+content=["\x27]([^"\x27]+)["\x27]', caseSensitive: false).firstMatch(res.body);
-            if (ogUrlMatch != null) {
-              final coords = extractCoordinatesFromText(ogUrlMatch.group(1)!);
-              if (coords != null) return coords;
+            // Priority A: Google Maps Place Preview Link in HTML
+            final previewLinkMatch = RegExp(
+              r'<link\s+href="(/maps/preview/place[^"]+)"',
+              caseSensitive: false,
+            ).firstMatch(res.body);
+
+            if (previewLinkMatch != null) {
+              final rawPath = previewLinkMatch.group(1)!;
+              final decodedPath = _safeHtmlUnescape(rawPath);
+              final previewUri = Uri.parse('https://www.google.com$decodedPath');
+
+              debugPrint('[MapUrlService] Found Place Preview link, fetching place data...');
+              try {
+                final previewRes = await http.get(
+                  previewUri,
+                  headers: {
+                    'User-Agent':
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                  },
+                ).timeout(const Duration(seconds: 8));
+
+                if (previewRes.statusCode == 200 && previewRes.body.isNotEmpty) {
+                  final parsedDest = _parsePlacePreviewResponse(
+                    previewRes.body,
+                    originalUrl: input,
+                    resolvedUrl: finalResolvedUrl,
+                  );
+                  if (parsedDest != null) {
+                    debugPrint(
+                      '[MapUrlService] Destination extracted via Place Preview: lat=${parsedDest.lat}, lng=${parsedDest.lng}, place=${parsedDest.placeName}, address=${parsedDest.address}',
+                    );
+                    _logResolution(parsedDest);
+                    return parsedDest;
+                  }
+                }
+              } catch (e) {
+                debugPrint('[MapUrlService] Place preview request error: $e');
+              }
             }
 
-            final canonicalMatch = RegExp(r'<link\s+rel=["\x27]canonical["\x27]\s+href=["\x27]([^"\x27]+)["\x27]', caseSensitive: false).firstMatch(res.body);
+            // Priority B: Check canonical or og:url
+            final canonicalMatch = RegExp(
+              r'<link\s+rel=["\x27]canonical["\x27]\s+href=["\x27]([^"\x27]+)["\x27]',
+              caseSensitive: false,
+            ).firstMatch(res.body);
             if (canonicalMatch != null) {
               final coords = extractCoordinatesFromText(canonicalMatch.group(1)!);
-              if (coords != null) return coords;
+              if (coords != null) {
+                final lat = coords['lat']!;
+                final lng = coords['lng']!;
+                final address = await reverseGeocode(lat, lng);
+                final dest = ExtractedMapDestination(
+                  lat: lat,
+                  lng: lng,
+                  address: address,
+                  placeId: _extractPlaceId(canonicalMatch.group(1)!) ?? _extractPlaceId(finalResolvedUrl),
+                  extractionMethod: 'canonical_link_destination',
+                  originalUrl: input,
+                  resolvedUrl: canonicalMatch.group(1)!,
+                );
+                _logResolution(dest);
+                return dest;
+              }
             }
 
-            final ogImageMatch = RegExp(r'<meta\s+property=["\x27]og:image["\x27]\s+content=["\x27]([^"\x27]+)["\x27]', caseSensitive: false).firstMatch(res.body);
-            if (ogImageMatch != null) {
-              final coords = extractCoordinatesFromText(ogImageMatch.group(1)!);
-              if (coords != null) return coords;
+            final ogUrlMatch = RegExp(
+              r'<meta\s+property=["\x27]og:url["\x27]\s+content=["\x27]([^"\x27]+)["\x27]',
+              caseSensitive: false,
+            ).firstMatch(res.body);
+            if (ogUrlMatch != null) {
+              final coords = extractCoordinatesFromText(ogUrlMatch.group(1)!);
+              if (coords != null) {
+                final lat = coords['lat']!;
+                final lng = coords['lng']!;
+                final address = await reverseGeocode(lat, lng);
+                final dest = ExtractedMapDestination(
+                  lat: lat,
+                  lng: lng,
+                  address: address,
+                  placeId: _extractPlaceId(ogUrlMatch.group(1)!) ?? _extractPlaceId(finalResolvedUrl),
+                  extractionMethod: 'og_url_destination',
+                  originalUrl: input,
+                  resolvedUrl: ogUrlMatch.group(1)!,
+                );
+                _logResolution(dest);
+                return dest;
+              }
             }
 
-            final coordsFromBody = extractCoordinatesFromText(res.body);
-            if (coordsFromBody != null) {
-              debugPrint('[MapUrlService] Coordinates extracted from response body: $coordsFromBody');
-              return coordsFromBody;
+            // Priority C: Explicit place geometry array [null,null,lat,lng] in HTML
+            final jsonArrayMatch = RegExp(r'\[null,null,(-?\d+\.\d{4,}),(-?\d+\.\d{4,})\]').firstMatch(res.body);
+            if (jsonArrayMatch != null) {
+              final coords = _validateCoords(jsonArrayMatch.group(1), jsonArrayMatch.group(2));
+              if (coords != null) {
+                final lat = coords['lat']!;
+                final lng = coords['lng']!;
+                final address = await reverseGeocode(lat, lng);
+                final dest = ExtractedMapDestination(
+                  lat: lat,
+                  lng: lng,
+                  address: address,
+                  placeId: _extractPlaceId(finalResolvedUrl) ?? _extractPlaceId(res.body),
+                  extractionMethod: 'place_geometry_array',
+                  originalUrl: input,
+                  resolvedUrl: finalResolvedUrl,
+                );
+                _logResolution(dest);
+                return dest;
+              }
             }
           }
         } finally {
           client.close();
         }
       } catch (e) {
-        debugPrint('[MapUrlService] On-device redirect resolution warning: $e');
+        debugPrint('[MapUrlService] On-device resolution note: $e');
       }
     }
 
-    // Step 3: Backend URL Resolver fallback (if backend is reachable)
+    // Step 4: Backend URL Resolver fallback
     if (tryBackend) {
       for (final host in AppConfig.allHosts) {
         try {
@@ -318,7 +405,7 @@ class MapUrlService {
                 headers: AppConfig.headers,
                 body: jsonEncode({'url': input}),
               )
-              .timeout(const Duration(seconds: 5));
+              .timeout(const Duration(seconds: 6));
 
           if (response.statusCode == 200) {
             final data = json.decode(response.body);
@@ -326,8 +413,25 @@ class MapUrlService {
               final lat = (data['lat'] as num).toDouble();
               final lng = (data['lng'] as num).toDouble();
               if (_isValidLatLng(lat, lng)) {
-                debugPrint('[MapUrlService] Coordinates resolved via backend: {lat: $lat, lng: $lng}');
-                return {'lat': lat, 'lng': lng};
+                String? address = data['address'] as String?;
+                final placeName = data['place_name'] as String?;
+                final placeId = data['place_id'] as String?;
+                if (address == null || address.trim().isEmpty) {
+                  address = await reverseGeocode(lat, lng);
+                }
+                debugPrint('[MapUrlService] Resolved via backend: lat=$lat, lng=$lng, place=$placeName, placeId=$placeId');
+                final dest = ExtractedMapDestination(
+                  lat: lat,
+                  lng: lng,
+                  placeName: placeName != null && placeName.trim().isNotEmpty ? placeName.trim() : null,
+                  address: address != null && address.trim().isNotEmpty ? address.trim() : null,
+                  placeId: placeId != null && placeId.trim().isNotEmpty ? placeId.trim() : null,
+                  extractionMethod: data['source'] as String? ?? 'backend_resolver',
+                  originalUrl: input,
+                  resolvedUrl: data['resolved_url'] as String? ?? finalResolvedUrl,
+                );
+                _logResolution(dest);
+                return dest;
               }
             }
           }
@@ -337,7 +441,155 @@ class MapUrlService {
       }
     }
 
+    debugPrint('[MapUrlService] Could not resolve exact destination from: $input');
     return null;
+  }
+
+  /// Parses the response from /maps/preview/place?... endpoint
+  static ExtractedMapDestination? _parsePlacePreviewResponse(
+    String body, {
+    required String originalUrl,
+    required String resolvedUrl,
+  }) {
+    try {
+      var trimmed = body.trim();
+      if (trimmed.startsWith(")]}'")) {
+        trimmed = trimmed.substring(4).trim();
+      }
+
+      final dynamic data = json.decode(trimmed);
+      if (data is List) {
+        double? lat;
+        double? lng;
+        String? placeName;
+        String? address;
+
+        // Coordinates at data[4][0] -> [distance, lng, lat]
+        if (data.length > 4 && data[4] is List && (data[4] as List).isNotEmpty) {
+          final firstItem = data[4][0];
+          if (firstItem is List && firstItem.length >= 3) {
+            final possibleLng = (firstItem[1] as num?)?.toDouble();
+            final possibleLat = (firstItem[2] as num?)?.toDouble();
+            if (possibleLat != null && possibleLng != null && _isValidLatLng(possibleLat, possibleLng)) {
+              lat = possibleLat;
+              lng = possibleLng;
+            }
+          }
+        }
+
+        // Fallback: search for [null,null,lat,lng] in raw preview body
+        if (lat == null || lng == null) {
+          final m = RegExp(r'\[null,null,(-?\d+\.\d{4,}),(-?\d+\.\d{4,})\]').firstMatch(body);
+          if (m != null) {
+            final coords = _validateCoords(m.group(1), m.group(2));
+            if (coords != null) {
+              lat = coords['lat'];
+              lng = coords['lng'];
+            }
+          }
+        }
+
+        // Place Name at data[6][11] or data[6][0]
+        if (data.length > 6 && data[6] is List) {
+          final list6 = data[6] as List;
+          if (list6.length > 11 && list6[11] is String && (list6[11] as String).trim().isNotEmpty) {
+            placeName = (list6[11] as String).trim();
+          }
+
+          // Address lines at data[6][2]
+          if (list6.length > 2 && list6[2] is List) {
+            final addrList = (list6[2] as List).whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty);
+            if (addrList.isNotEmpty) {
+              address = addrList.join(', ');
+            }
+          }
+        }
+
+        // Extract Place ID if present
+        final placeId = _extractPlaceId(body) ?? _extractPlaceId(resolvedUrl);
+
+        if (lat != null && lng != null && _isValidLatLng(lat, lng)) {
+          return ExtractedMapDestination(
+            lat: lat,
+            lng: lng,
+            placeName: placeName,
+            address: address,
+            placeId: placeId,
+            extractionMethod: 'google_maps_place_preview',
+            originalUrl: originalUrl,
+            resolvedUrl: resolvedUrl,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[MapUrlService] Error parsing place preview JSON: $e');
+    }
+    return null;
+  }
+
+  /// Logs the 7 debug points required for Google Maps location extraction
+  static void _logResolution(ExtractedMapDestination dest) {
+    debugPrint('Original URL: ${dest.originalUrl}');
+    debugPrint('Resolved URL: ${dest.resolvedUrl}');
+    debugPrint('Place ID: ${dest.placeId ?? 'N/A'}');
+    debugPrint('Extraction method: ${dest.extractionMethod}');
+    debugPrint('Final destination: ${dest.placeName ?? dest.address ?? 'Detected Location'}');
+    debugPrint('Final latitude: ${dest.lat}');
+    debugPrint('Final longitude: ${dest.lng}');
+  }
+
+  /// Extracts Google Place ID (ChIJ... or hex 0x...:0x...) from URLs or HTML
+  static String? _extractPlaceId(String text) {
+    if (text.isEmpty) return null;
+    final m1 = RegExp(r'placeid[=\\u003d]+([a-zA-Z0-9_\-]+)').firstMatch(text);
+    if (m1 != null) return m1.group(1);
+    final m2 = RegExp(r'!1s(0x[0-9a-fA-F]+:0x[0-9a-fA-F]+)').firstMatch(text);
+    if (m2 != null) return m2.group(1);
+    final m3 = RegExp(r'[?&]place_id=([a-zA-Z0-9_\-]+)').firstMatch(text);
+    if (m3 != null) return m3.group(1);
+    return null;
+  }
+
+  /// Reverse geocode coordinates using OpenStreetMap Nominatim
+  static Future<String?> reverseGeocode(double lat, double lng) async {
+    try {
+      final uri = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lng');
+      final res = await http.get(
+        uri,
+        headers: {
+          'User-Agent': 'MedSafeLifeScience/1.0 (contact@medsafe.com)',
+          'Accept-Language': 'en',
+        },
+      ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final displayName = data['display_name'] as String?;
+        if (displayName != null && displayName.trim().isNotEmpty) {
+          return displayName.trim();
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Backward-compatible coordinate resolver returning {'lat': lat, 'lng': lng}
+  static Future<Map<String, double>?> resolveMapUrl(
+    String rawInput, {
+    Duration timeout = const Duration(seconds: 12),
+    bool tryBackend = true,
+  }) async {
+    final dest = await resolveLocation(rawInput, timeout: timeout, tryBackend: tryBackend);
+    return dest?.toLatLngMap();
+  }
+
+  static String _safeHtmlUnescape(String str) {
+    return str
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'");
   }
 
   static String _safeUrlDecode(String str) {
@@ -362,3 +614,4 @@ class MapUrlService {
     return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0 && (lat != 0.0 || lng != 0.0);
   }
 }
+

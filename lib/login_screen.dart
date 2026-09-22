@@ -684,32 +684,7 @@ class _LoginScreenState extends State<LoginScreen>
                 },
               ),
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Redirecting to Password Reset...'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-                child: const Text(
-                  'Forgot Password?',
-                  style: TextStyle(
-                    color: _darkText,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             _buildSubmitButton(isAdmin: false, isRegister: false),
             const SizedBox(height: 22),
             _buildFooter(),
@@ -767,32 +742,7 @@ class _LoginScreenState extends State<LoginScreen>
                 },
               ),
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Redirecting to Password Reset...'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-                child: const Text(
-                  'Forgot Password?',
-                  style: TextStyle(
-                    color: _darkText,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             _buildSubmitButton(isAdmin: true, isRegister: false),
             const SizedBox(height: 22),
             _buildFooter(),

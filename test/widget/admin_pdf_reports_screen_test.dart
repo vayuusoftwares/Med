@@ -18,6 +18,13 @@ void main() {
       'phone': '9123456780',
       'is_online': false,
     },
+    {
+      'id': 103,
+      'name': 'Anil Kumar',
+      'email': 'anil@medsafe.com',
+      'phone': '9811223344',
+      'is_online': false,
+    },
   ];
 
   final sampleTasks = [
@@ -29,6 +36,7 @@ void main() {
       'doctor_name': 'Dr. Alok Verma',
       'clinic_name': 'City Care Clinic',
       'clinic_address': 'MG Road, Bengaluru',
+      'map_url': 'https://maps.google.com/?q=12.9716,77.5946',
       'task_category': 'General',
       'notes': 'Follow up on sample delivery',
       'status': 'pending',
@@ -42,6 +50,7 @@ void main() {
       'doctor_name': 'Dr. Sunita Rao',
       'clinic_name': 'Apex Hospital',
       'clinic_address': 'Indiranagar, Bengaluru',
+      'map_url': 'https://maps.google.com/?q=12.9783,77.6408',
       'task_category': 'Orthopedic',
       'notes': 'Delivered catalog',
       'status': 'completed',
@@ -58,6 +67,7 @@ void main() {
       'doctor_name': 'Dr. Rajesh Kumar',
       'clinic_name': 'Lifeline Clinic',
       'clinic_address': 'Koramangala, Bengaluru',
+      'map_url': 'https://maps.google.com/?q=12.9352,77.6245',
       'task_category': 'Neurology',
       'notes': 'First visit',
       'status': 'pending',
@@ -191,6 +201,45 @@ void main() {
       // Verify we are in View Mode inside AdminReportViewerScreen
       expect(find.text('Report View Mode: Review the document below, then tap Download Report.'), findsOneWidget);
       expect(find.text('Download Report'), findsWidgets);
+    });
+
+    testWidgets('unassigned rep generates report without error and represents NOT YET ASSIGNED', (WidgetTester tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        initialRepId: 103,
+        initialRepName: 'Anil Kumar',
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Anil Kumar'), findsWidgets);
+
+      // Scroll View Report into view and tap it
+      await tester.ensureVisible(find.text('View Report'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('View Report'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Report viewer should open successfully for unassigned rep
+      expect(find.text('Report View Mode: Review the document below, then tap Download Report.'), findsOneWidget);
+    });
+
+    testWidgets('All Medical Reps generates consolidated report including unassigned reps', (WidgetTester tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        initialRepName: 'All Medical Reps',
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('All Medical Reps'), findsWidgets);
+
+      await tester.ensureVisible(find.text('View Report'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('View Report'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Report View Mode: Review the document below, then tap Download Report.'), findsOneWidget);
     });
 
     testWidgets('embedded mode renders seamlessly without duplicate scaffold', (WidgetTester tester) async {

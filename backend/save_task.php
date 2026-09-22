@@ -49,7 +49,10 @@ if ($user_id < 0 || !$task_basis || !$doctor_name || !$clinic_name) {
     exit;
 }
 
-$conn->query("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS area VARCHAR(100) NOT NULL DEFAULT ''");
+$r = $conn->query("SHOW COLUMNS FROM `tasks` LIKE 'area'");
+if ($r && $r->num_rows == 0) {
+    $conn->query("ALTER TABLE `tasks` ADD COLUMN `area` VARCHAR(100) NOT NULL DEFAULT ''");
+}
 
 $task_id = (int)($data['task_id'] ?? ($data['id'] ?? 0));
 

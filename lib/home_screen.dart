@@ -137,6 +137,81 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return false;
   }
 
+  bool _isSameDay(DateTime? d1, DateTime? d2) {
+    if (d1 == null || d2 == null) return false;
+    return d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+  }
+
+  String _getAdminTasksDatePreset() {
+    final from = _adminTasksAppliedFromDate;
+    final to = _adminTasksAppliedToDate;
+    if (from == null && to == null) return 'all';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final dayBefore = today.subtract(const Duration(days: 2));
+
+    if (_isSameDay(from, to)) {
+      if (_isSameDay(from, today)) return 'today';
+      if (_isSameDay(from, yesterday)) return 'yesterday';
+      if (_isSameDay(from, dayBefore)) return 'day_before';
+    }
+    return 'custom';
+  }
+
+  Widget _buildAdminQuickDateChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? _emeraldPrimary : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? _emeraldPrimary : const Color(0xFFCBD5E1),
+            width: isSelected ? 1.3 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: _emeraldPrimary.withValues(alpha: 0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 13,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Map<String, dynamic>> get _dateFilteredUserTasks {
     if (_selectedCompletionDate == null) return _userTasks;
     return _userTasks.where((t) => _taskMatchesDate(t, _selectedCompletionDate)).toList();
@@ -2408,6 +2483,280 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Failed to start task. Please try again.'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteTask(Map<String, dynamic> task) async {
+    final doctor = (task['doctor_name'] ?? 'Doctor').toString();
+    final clinic = (task['clinic_name'] ?? 'Clinic').toString();
+    final basis = (task['task_basis'] ?? 'Daily').toString();
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Danger Header Icon
+            Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFEE2E2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.delete_forever_rounded,
+                color: Color(0xFFDC2626),
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Delete Task',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Are you sure you want to delete this task?',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+
+            // Task Details Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.person_outline_rounded, size: 16, color: Color(0xFF00A86B)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Dr. $doctor',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.local_hospital_outlined, size: 16, color: Color(0xFF0284C7)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          clinic,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '$basis Task',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFE65100),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Warning Banner
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFDC2626)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'This will permanently remove the task and all tracking data.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFB91C1C),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFDC2626),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 17),
+                  label: const Text(
+                    'Delete',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await _deleteTask(task);
+    }
+  }
+
+  Future<void> _deleteTask(Map<String, dynamic> task) async {
+    final taskId = (task['id'] as num?)?.toInt() ?? 0;
+    if (taskId <= 0) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF00A86B))),
+    );
+
+    bool deleted = false;
+    final payload = {
+      'task_id': taskId,
+      'user_id': widget.user.id,
+    };
+
+    for (final base in AppConfig.allHosts) {
+      try {
+        final res = await http.post(
+          Uri.parse('$base/backend/delete_task.php'),
+          headers: AppConfig.headers,
+          body: jsonEncode(payload),
+        ).timeout(const Duration(seconds: 6));
+
+        final data = json.decode(res.body);
+        if (data['success'] == true) {
+          deleted = true;
+          break;
+        }
+      } catch (_) {}
+    }
+
+    // Dismiss loading indicator
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.of(context).pop();
+    }
+
+    if (deleted) {
+      setState(() {
+        _userTasks.removeWhere((t) => (t['id'] as num?)?.toInt() == taskId);
+      });
+      _fetchUserTasks();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text('Task deleted successfully.'),
+              ],
+            ),
+            backgroundColor: const Color(0xFF00A86B),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text('Failed to delete task. Please try again.'),
+              ],
+            ),
             backgroundColor: const Color(0xFFDC2626),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -5046,117 +5395,152 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: const Color(0xFFFFF3E0), borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  children: [
-                    const Icon(Icons.timelapse_rounded, size: 14, color: Color(0xFFE65100)),
-                    const SizedBox(width: 4),
-                    Text('$basis Task', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFE65100))),
-                  ],
-                ),
-              ),
-              if (category.toString().isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(8)),
-                  child: Text(category.toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
-                ),
-              ],
-              const SizedBox(width: 8),
-              // In-Progress / Pending Badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isInProgress ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isInProgress ? const Color(0xFF86EFAC) : const Color(0xFFCBD5E1),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 5,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isInProgress ? const Color(0xFF16A34A) : const Color(0xFF64748B),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: const Color(0xFFFFF3E0), borderRadius: BorderRadius.circular(8)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.timelapse_rounded, size: 13, color: Color(0xFFE65100)),
+                          const SizedBox(width: 4),
+                          Text('$basis Task', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFE65100))),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      isInProgress ? 'In Progress' : 'Pending',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: isInProgress ? const Color(0xFF15803D) : const Color(0xFF475569),
+                    if (category.toString().isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(8)),
+                        child: Text(category.toString(), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isInProgress ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isInProgress ? const Color(0xFF86EFAC) : const Color(0xFFCBD5E1),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isInProgress ? const Color(0xFF16A34A) : const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            isInProgress ? 'In Progress' : 'Pending',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isInProgress ? const Color(0xFF15803D) : const Color(0xFF475569),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-              const Spacer(),
-              // ── Live Source → Destination Distance in Meters (Refreshes every 1 sec) ──
-              if (lat != null && lng != null && lat != 0.0 && lng != 0.0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
-                        ? const Color(0xFFD1FAE5)
-                        : const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
-                          ? const Color(0xFF00A86B)
-                          : const Color(0xFF3B82F6),
-                      width: 1.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
-                                ? const Color(0xFF00A86B)
-                                : const Color(0xFF3B82F6))
-                            .withValues(alpha: 0.12),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
-                            ? Icons.check_circle_rounded
-                            : Icons.near_me_rounded,
-                        size: 13,
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Live Source → Destination Distance in Meters (Refreshes every 1 sec) ──
+                  if (lat != null && lng != null && lat != 0.0 && lng != 0.0) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
                         color: distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
-                            ? const Color(0xFF047857)
-                            : const Color(0xFF1D4ED8),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        distanceMeters != null
-                            ? (distanceMeters < 1000
-                                ? '${distanceMeters.toStringAsFixed(0)} m'
-                                : '${(distanceMeters / 1000).toStringAsFixed(2)} km (${distanceMeters.toStringAsFixed(0)} m)')
-                            : 'Locating...',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                            ? const Color(0xFFD1FAE5)
+                            : const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
                           color: distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
-                              ? const Color(0xFF047857)
-                              : const Color(0xFF1D4ED8),
+                              ? const Color(0xFF00A86B)
+                              : const Color(0xFF3B82F6),
+                          width: 1.1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
+                                    ? const Color(0xFF00A86B)
+                                    : const Color(0xFF3B82F6))
+                                .withValues(alpha: 0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
+                                ? Icons.check_circle_rounded
+                                : Icons.near_me_rounded,
+                            size: 12,
+                            color: distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
+                                ? const Color(0xFF047857)
+                                : const Color(0xFF1D4ED8),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            distanceMeters != null
+                                ? (distanceMeters < 1000
+                                    ? '${distanceMeters.toStringAsFixed(0)} m'
+                                    : '${(distanceMeters / 1000).toStringAsFixed(1)} km')
+                                : 'Locating...',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: distanceMeters != null && distanceMeters <= AppConfig.destinationRadiusMeters
+                                  ? const Color(0xFF047857)
+                                  : const Color(0xFF1D4ED8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  // Delete Task Button
+                  Tooltip(
+                    message: 'Delete Task',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => _confirmDeleteTask(task),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 17,
+                          color: Color(0xFFDC2626),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -5431,51 +5815,80 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ],
                 ),
               ),
-              // Points Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isGreen ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: isGreen ? const Color(0xFFA7F3D0) : const Color(0xFFFCA5A5)),
-                ),
-                child: Text(
-                  pointsEarned > 0 ? '+$pointsEarned pts' : '$pointsEarned pts',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    color: isGreen ? const Color(0xFF047857) : const Color(0xFFDC2626),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              // Checkout mode pill: ONLINE / OFFLINE (in RED if OFFLINE)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isOffline ? const Color(0xFFFEE2E2) : const Color(0xFFE0F2FE),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: isOffline ? const Color(0xFFFCA5A5) : const Color(0xFFBAE6FD)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                      size: 12,
-                      color: isOffline ? const Color(0xFFDC2626) : const Color(0xFF0284C7),
+              const SizedBox(width: 8),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.end,
+                children: [
+                  // Points Pill
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isGreen ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(color: isGreen ? const Color(0xFFA7F3D0) : const Color(0xFFFCA5A5)),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isOffline ? 'OFFLINE' : 'ONLINE',
+                    child: Text(
+                      pointsEarned > 0 ? '+$pointsEarned pts' : '$pointsEarned pts',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
-                        color: isOffline ? const Color(0xFFDC2626) : const Color(0xFF0284C7),
+                        color: isGreen ? const Color(0xFF047857) : const Color(0xFFDC2626),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  // Checkout mode pill: ONLINE / OFFLINE (in RED if OFFLINE)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isOffline ? const Color(0xFFFEE2E2) : const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(color: isOffline ? const Color(0xFFFCA5A5) : const Color(0xFFBAE6FD)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
+                          size: 11,
+                          color: isOffline ? const Color(0xFFDC2626) : const Color(0xFF0284C7),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          isOffline ? 'OFFLINE' : 'ONLINE',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: isOffline ? const Color(0xFFDC2626) : const Color(0xFF0284C7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Delete Task Button
+                  Tooltip(
+                    message: 'Delete Task',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(7),
+                      onTap: () => _confirmDeleteTask(task),
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 15,
+                          color: Color(0xFFDC2626),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -5884,6 +6297,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                           'Filter by Date Range',
                                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _darkText),
                                         ),
+                                        if (isFiltered) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFECFDF5),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFFA7F3D0)),
+                                            ),
+                                            child: Text(
+                                              '${currentFilteredTasks.length} task${currentFilteredTasks.length == 1 ? '' : 's'}',
+                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _emeraldDark),
+                                            ),
+                                          ),
+                                        ],
                                         const Spacer(),
                                         if (isFiltered || _adminTasksFromDate != null || _adminTasksToDate != null)
                                           GestureDetector(
@@ -5918,6 +6346,91 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                           ),
                                       ],
                                     ),
+                                    const SizedBox(height: 10),
+
+                                    // Quick Presets: All, Today, Yesterday, Day Before, Select / Custom
+                                    () {
+                                      final activePreset = _getAdminTasksDatePreset();
+                                      final now = DateTime.now();
+                                      final today = DateTime(now.year, now.month, now.day);
+                                      final yesterday = today.subtract(const Duration(days: 1));
+                                      final dayBefore = today.subtract(const Duration(days: 2));
+
+                                      return SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Row(
+                                          children: [
+                                            _buildAdminQuickDateChip(
+                                              label: 'All',
+                                              isSelected: activePreset == 'all',
+                                              icon: Icons.all_inclusive_rounded,
+                                              onTap: () {
+                                                setState(() {
+                                                  _adminTasksFromDate = null;
+                                                  _adminTasksToDate = null;
+                                                  _adminTasksAppliedFromDate = null;
+                                                  _adminTasksAppliedToDate = null;
+                                                });
+                                                _fetchUserTasks();
+                                              },
+                                            ),
+                                            const SizedBox(width: 6),
+                                            _buildAdminQuickDateChip(
+                                              label: 'Today',
+                                              isSelected: activePreset == 'today',
+                                              icon: Icons.today_rounded,
+                                              onTap: () {
+                                                setState(() {
+                                                  _adminTasksFromDate = today;
+                                                  _adminTasksToDate = today;
+                                                  _adminTasksAppliedFromDate = today;
+                                                  _adminTasksAppliedToDate = today;
+                                                });
+                                                _fetchUserTasks(fromDate: today, toDate: today);
+                                              },
+                                            ),
+                                            const SizedBox(width: 6),
+                                            _buildAdminQuickDateChip(
+                                              label: 'Yesterday',
+                                              isSelected: activePreset == 'yesterday',
+                                              icon: Icons.history_rounded,
+                                              onTap: () {
+                                                setState(() {
+                                                  _adminTasksFromDate = yesterday;
+                                                  _adminTasksToDate = yesterday;
+                                                  _adminTasksAppliedFromDate = yesterday;
+                                                  _adminTasksAppliedToDate = yesterday;
+                                                });
+                                                _fetchUserTasks(fromDate: yesterday, toDate: yesterday);
+                                              },
+                                            ),
+                                            const SizedBox(width: 6),
+                                            _buildAdminQuickDateChip(
+                                              label: 'Day Before',
+                                              isSelected: activePreset == 'day_before',
+                                              icon: Icons.event_repeat_rounded,
+                                              onTap: () {
+                                                setState(() {
+                                                  _adminTasksFromDate = dayBefore;
+                                                  _adminTasksToDate = dayBefore;
+                                                  _adminTasksAppliedFromDate = dayBefore;
+                                                  _adminTasksAppliedToDate = dayBefore;
+                                                });
+                                                _fetchUserTasks(fromDate: dayBefore, toDate: dayBefore);
+                                              },
+                                            ),
+                                            const SizedBox(width: 6),
+                                            _buildAdminQuickDateChip(
+                                              label: 'Select / Custom',
+                                              isSelected: activePreset == 'custom',
+                                              icon: Icons.tune_rounded,
+                                              onTap: () {},
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }(),
+
                                     const SizedBox(height: 10),
                                     Row(
                                       children: [
@@ -6074,7 +6587,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                             elevation: 1,
                                           ),
-                                          child: const Text('Apply', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                          child: _loadingUserTasks
+                                              ? const SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                                )
+                                              : const Text('Apply', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                                         ),
                                       ],
                                     ),
@@ -6092,10 +6611,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                             const Icon(Icons.filter_list_rounded, size: 12, color: _emeraldDark),
                                             const SizedBox(width: 4),
                                             Expanded(
-                                              child: Text(
-                                                'Filtered: ${_adminTasksAppliedFromDate != null ? DateFormat('dd/MM/yyyy').format(_adminTasksAppliedFromDate!) : 'Beginning'} to ${_adminTasksAppliedToDate != null ? DateFormat('dd/MM/yyyy').format(_adminTasksAppliedToDate!) : 'Present'} (${currentFilteredTasks.length} task${currentFilteredTasks.length == 1 ? '' : 's'})',
-                                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: _emeraldDark),
-                                              ),
+                                              child: () {
+                                                final preset = _getAdminTasksDatePreset();
+                                                String text;
+                                                if (preset == 'today') {
+                                                  text = 'Filtered: Today (${DateFormat('dd/MM/yyyy').format(_adminTasksAppliedFromDate!)}) • ${currentFilteredTasks.length} tasks';
+                                                } else if (preset == 'yesterday') {
+                                                  text = 'Filtered: Yesterday (${DateFormat('dd/MM/yyyy').format(_adminTasksAppliedFromDate!)}) • ${currentFilteredTasks.length} tasks';
+                                                } else if (preset == 'day_before') {
+                                                  text = 'Filtered: Day Before (${DateFormat('dd/MM/yyyy').format(_adminTasksAppliedFromDate!)}) • ${currentFilteredTasks.length} tasks';
+                                                } else {
+                                                  text = 'Filtered: ${_adminTasksAppliedFromDate != null ? DateFormat('dd/MM/yyyy').format(_adminTasksAppliedFromDate!) : 'Beginning'} to ${_adminTasksAppliedToDate != null ? DateFormat('dd/MM/yyyy').format(_adminTasksAppliedToDate!) : 'Present'} • ${currentFilteredTasks.length} task${currentFilteredTasks.length == 1 ? '' : 's'}';
+                                                }
+                                                return Text(
+                                                  text,
+                                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: _emeraldDark),
+                                                );
+                                              }(),
                                             ),
                                           ],
                                         ),

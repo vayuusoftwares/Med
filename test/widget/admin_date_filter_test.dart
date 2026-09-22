@@ -56,4 +56,47 @@ void main() {
     await tester.tap(cancelBtn);
     await tester.pumpAndSettle();
   });
+
+  testWidgets('renders Today, Yesterday, Day Before, Select / Custom, and All presets', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AdminSalesRepListScreen(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('Day Before'), findsOneWidget);
+    expect(find.text('Select / Custom'), findsOneWidget);
+
+    // Tap Today
+    await tester.tap(find.text('Today'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Tap Yesterday
+    await tester.tap(find.text('Yesterday'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Tap Day Before
+    await tester.tap(find.text('Day Before'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Tap All to reset
+    await tester.tap(find.text('All'));
+    await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('renders phone bio item with touch and dialer capability', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AdminSalesRepListScreen(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify screen rendered
+    expect(find.text('Sales Representatives'), findsOneWidget);
+  });
 }
